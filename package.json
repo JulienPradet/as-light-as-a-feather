@@ -1,0 +1,23 @@
+{
+  "name": "canvas-jp-starter",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "serve": "vite preview"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "canvas-jp": "file:../canvas-jp",
+    "canvas-sketch-util": "^1.10.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.1.0",
+    "prettier": "^2.4.1",
+    "vite": "^2.6.13"
+  }
+}
