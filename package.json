@@ -10,9 +10,9 @@
   },
   "keywords": [],
   "author": "",
-  "license": "MIT",
+  "license": "CC BY-NC-SA 3.0",
   "dependencies": {
-    "canvas-jp": "file:../canvas-jp",
+    "canvas-jp": "^1.0.1",
     "canvas-sketch-util": "^1.10.0"
   },
   "devDependencies": {

@@ -1,10 +1,14 @@
-# canvas-jp-starter
+# WCCChallenge - Wave
 
-Starter kit to bootstrap a new [canvas-jp](https://github.com/JulienPradet/canvas-jp) project.
+My entry for @sableraph's WCCChallenge
+
+This week's topic was "wave". Went a bit far away :)
+
+But try to imagine something that's horizontal. No, not like that. Yep, more like that.
+
+Some early results in this thread: https://twitter.com/JulienPradet/status/1520317886098817024
 
 ## Installation
-
-This remote is to be cloned next to [canvas-jp](https://github.com/JulienPradet/canvas-jp)'s clone. If you're not putting these in the same folder, `package.json` should be changed to use the correct path for `canvas-jp` dependency.
 
 Then run the following commands:
 
@@ -13,4 +17,6 @@ npm install
 npm run dev
 ```
 
-And you should be able to open a new tab at http://localhost:3000 where you can develop your brand new [canvas-jp](https://github.com/JulienPradet/canvas-jp) project.
+And you should be able to open a new tab at http://localhost:3000 where you'll see the results.
+
+Click on the result to load a new one.
