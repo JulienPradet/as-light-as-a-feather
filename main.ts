@@ -8,8 +8,8 @@ import { CanvasJpPoint, Point } from "canvas-jp/Point";
 import { translateVector } from "canvas-jp/transform";
 import { mapRange, clamp } from "canvas-sketch-util/math";
 
-const width = 600;
-const height = 600;
+const width = 1200;
+const height = 1200;
 const frames = 100;
 
 let palette = [
