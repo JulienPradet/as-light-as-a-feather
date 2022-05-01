@@ -45,7 +45,11 @@ canvasJp(
     );
     const elementDirection =
       random.value() > 0.3 ? 0 : ((random.value() - 0.5) * Math.PI) / 2;
-    const placement = random.pick([placeElementCircle, placeElementWave]);
+    const placement = random.pick([
+      placeElementCircle,
+      placeElementWave,
+      placeElementGrid,
+    ]);
     const directionFunction = random.pick(
       [
         directionConcentric,
@@ -228,12 +232,28 @@ canvasJp(
       };
     }
 
+    function placeElementGrid(index: number) {
+      const numberOfElementsPerRow =
+        Math.round(Math.sqrt(numberOfElements)) * 0.7;
+      const gridSpacing = width / numberOfElementsPerRow;
+
+      const x = index % numberOfElementsPerRow;
+      const y = Math.floor(index / numberOfElementsPerRow);
+
+      return {
+        progress: 1,
+        elementCenter: Point(x * gridSpacing, y * gridSpacing),
+        distanceFromCenter: 1,
+      };
+    }
+
     const grid = [];
 
     // Draw many elements. Position them on a sphere randomly. Once projected on a
     // 2D plan, it makes the center less dense than the outside
     for (let pointIndex = 0; pointIndex < numberOfElements; pointIndex++) {
-      const { progress, elementCenter, distanceFromCenter } = placement();
+      const { progress, elementCenter, distanceFromCenter } =
+        placement(pointIndex);
 
       const element = makeElement(
         length * progress * random.gaussian(1, 0.1),
