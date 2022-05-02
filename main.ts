@@ -1,10 +1,19 @@
 import { canvasJp } from "canvas-jp";
 import { angle } from "canvas-jp/angle";
 import { CanvasJpArc, Circle } from "canvas-jp/Circle";
-import { Color } from "canvas-jp/Color";
+import { CanvasJpColorHsv, Color } from "canvas-jp/Color";
 import { distance } from "canvas-jp/distance";
-import { inOutSine, inSine } from "canvas-jp/ease";
+import {
+  inBounce,
+  inCirc,
+  inCube,
+  inOutBounce,
+  inOutSine,
+  inQuart,
+  inSine,
+} from "canvas-jp/ease";
 import { CanvasJpPoint, Point } from "canvas-jp/Point";
+import { PolygonFromRect } from "canvas-jp/Polygon";
 import { translateVector } from "canvas-jp/transform";
 import { mapRange, clamp } from "canvas-sketch-util/math";
 
@@ -12,40 +21,41 @@ const width = 1200;
 const height = (width / 21) * 29.7;
 const frames = 100;
 
-let colorPalette = [
+const palette = [
   Color(214 / 360, 0.52, 0.5),
   Color(180 / 360, 0.1, 0.65),
   Color(5 / 360, 0.6, 0.93),
   Color(40 / 360, 0.66, 1),
-  Color(37 / 360, 0.18, 0.99),
+  Color(37 / 360, 0.18, 0.99), // this one must be last for psychedelic
 ];
 
-let blackAndWhitePalette = [Color(0, 0, 1), Color(0, 0, 0.2)];
+const white = Color(0, 0, 1);
+const black = Color(0, 0, 0.2);
+let blackAndWhitePalette = [white, black];
 
-function draw() {
-  canvasJp(
+let timeToDraw = 5000;
+function getTimeToDraw() {
+  return timeToDraw;
+}
+
+async function draw() {
+  document.querySelector("#container").innerHTML = "";
+
+  return canvasJp(
     document.querySelector("#container"),
-    async function (t, frame, random) {
+    function* (t, frame, random) {
       const margin = width / 10;
 
       // Elements variables
-      const numberOfElements = Math.ceil(
+      let numberOfElements = Math.ceil(
         mapRange(random.value(), 0, 1, 420, 850)
       );
-      const initialWidth = mapRange(
-        random.value(),
-        0,
-        1,
-        width / 75,
-        width / 40
-      );
+      let initialWidth = mapRange(random.value(), 0, 1, width / 75, width / 40);
       const length = clamp(
         initialWidth,
         initialWidth * 30,
         random.gaussian(initialWidth * 15, initialWidth * 3)
       );
-      const elementDirection =
-        random.value() > 0.3 ? 0 : ((random.value() - 0.5) * Math.PI) / 2;
       const placement = random.pick([
         placeElementCircle,
         placeElementWave,
@@ -60,10 +70,82 @@ function draw() {
         ].filter(Boolean)
       );
 
+      // Control over the colors
+      // Gradient precision defines how smooth the gradient should be.
+      const gradientPrecision = mapRange(
+        Math.pow(random.value(), 18),
+        0,
+        1,
+        0.8,
+        12
+      );
+
+      function blackAndWhite() {
+        const mainColor = random.pick(blackAndWhitePalette);
+        const secondColor = random.pick(
+          blackAndWhitePalette.filter((color) => color !== mainColor)
+        );
+        return {
+          name: "black&white",
+          getBackgroundColor: () => mainColor,
+          getMainColor: () => mainColor,
+          getSecondColor: (mainColor: CanvasJpColorHsv) => secondColor,
+        };
+      }
+
+      function monochrome() {
+        const mainColor = random.pick(palette);
+        const secondColor = random.pick(
+          palette.filter((color) => color !== mainColor)
+        );
+        return {
+          name: "monochrome",
+          getBackgroundColor: () => mainColor,
+          getMainColor: () => mainColor,
+          getSecondColor: (mainColor: CanvasJpColorHsv) => secondColor,
+        };
+      }
+
+      function multicolor() {
+        const mainColor = random.pick(palette);
+        return {
+          name: "multicolor",
+          getBackgroundColor: () => mainColor,
+          getMainColor: () => mainColor,
+          getSecondColor: (mainColor: CanvasJpColorHsv) =>
+            random.pick(palette.filter((color) => color !== mainColor)),
+        };
+      }
+
+      function psychedelic() {
+        return {
+          name: "psychedelic",
+          getBackgroundColor: () => palette[palette.length - 1],
+          getMainColor: () => random.pick(palette),
+          getSecondColor: (mainColor: CanvasJpColorHsv) =>
+            random.pick(palette.filter((color) => color !== mainColor)),
+        };
+      }
+
+      const colorPickerFactory = random.pick(
+        []
+          .concat(blackAndWhite)
+          .concat(new Array(5).fill(monochrome))
+          .concat(new Array(14).fill(multicolor))
+          .concat(psychedelic)
+      );
+      const colorPicker = colorPickerFactory();
+      const backgroundColor = colorPicker.getBackgroundColor();
+
+      const colorDirection =
+        random.value() > 0.5
+          ? (progress) => progress
+          : (progress) => 1 - progress;
+
       // Deformation of the positions. If everything is at 0, it should be a
       // perfect circle
-      const flowFieldZoom = mapRange(random.value(), 0, 1, width / 2, width);
-      const circleDeformationStrength = mapRange(random.value(), 0, 1, 0, 2);
+      let flowFieldZoom = mapRange(random.value(), 0, 1, width / 2, width);
+      let circleDeformationStrength = mapRange(random.value(), 0, 1, 0, 1.8);
       const sinusoidalDeformationFrequence = mapRange(
         random.value(),
         0,
@@ -76,38 +158,6 @@ function draw() {
           ? mapRange(random.value(), 0, 1, 0.06, 0.1)
           : 0;
 
-      // Control over the colors
-      // Gradient precision defines how smooth the gradient should be.
-      const gradientPrecision = mapRange(
-        Math.pow(random.value(), 18),
-        0,
-        1,
-        0.8,
-        12
-      );
-      const palette = random.pick([
-        colorPalette,
-        colorPalette,
-        colorPalette,
-        colorPalette,
-        colorPalette,
-        colorPalette,
-        colorPalette,
-        colorPalette,
-        colorPalette,
-        blackAndWhitePalette,
-      ]);
-      const isMulticolor = random.value() > 0.3;
-      const colorDirection =
-        random.value() > 0.5
-          ? (progress) => progress
-          : (progress) => 1 - progress;
-
-      const mainColor = random.pick(palette);
-      const secondColor = random.pick(
-        palette.filter((color) => color !== mainColor)
-      );
-
       const center = Point(width / 2, height / 2);
 
       // One element is kind of one brush stroke. It starts big, grows smaller
@@ -117,10 +167,8 @@ function draw() {
         startPoint: CanvasJpPoint,
         initialWidth: number
       ) {
-        const endColor = mainColor;
-        const startColor = isMulticolor
-          ? random.pick(palette.filter((color) => color !== endColor))
-          : secondColor;
+        const endColor = colorPicker.getMainColor();
+        const startColor = colorPicker.getSecondColor(endColor);
 
         // If two points have the same exact position, we still want to apply some
         // kind of offset on its deformation. If we don't, it makes things a bit too
@@ -229,6 +277,9 @@ function draw() {
               ((random.value() - 0.5) * width) / 3 + width / 2,
               ((random.value() - 0.5) * height) / 3 + height / 2
             );
+
+      let elementDirection =
+        random.value() > 0.6 ? 0 : ((random.value() - 0.5) * Math.PI) / 2;
       function directionConcentric(initialPosition: CanvasJpPoint) {
         return (
           angle(directionCenter, initialPosition) +
@@ -242,16 +293,18 @@ function draw() {
         return flatDirection;
       }
 
-      function placeElementCircle() {
-        const inSphere = true;
-        random.value() > 0.1;
+      function placeElementCircle(index: number) {
+        const inSphere = random.value() > 0.15;
+
         const sphereRadius = width / 2 - margin;
-        const circleRadius = (width / 3) * 2;
+        const circleRadius = sphereRadius + margin * 3;
         const circleAngle = mapRange(random.value(), 0, 1, 0, Math.PI * 2);
         const circleDistance = mapRange(
+          Math.pow(random.value(), 2),
+          0,
+          1,
           sphereRadius,
-          circleRadius,
-          random.value()
+          circleRadius
         );
         const [x, y] = inSphere
           ? random.onSphere(sphereRadius)
@@ -264,19 +317,29 @@ function draw() {
         // Change some base parameters based on the position of the element.
         // If it's far from the center, make it smaller.
         const distanceFromCenter = distance(center, elementCenter);
-        const progress = distanceFromCenter / sphereRadius;
+        const progress = inSphere
+          ? distanceFromCenter / sphereRadius
+          : 1 -
+            (distanceFromCenter - sphereRadius) / (circleRadius - sphereRadius);
         return {
-          progress: clamp(0, 2, random.gaussian(progress, 0.05)),
+          progress: clamp(
+            0,
+            2,
+            random.gaussian(inSphere ? Math.sqrt(progress) : progress / 2, 0.05)
+          ),
           elementCenter,
           distanceFromCenter: clamp(
             0,
             1,
-            random.gaussian(distanceFromCenter, 0.2)
+            random.gaussian(
+              inSphere ? distanceFromCenter : distanceFromCenter / 2,
+              0.2
+            )
           ),
         };
       }
 
-      function placeElementWave() {
+      function placeElementWave(index: number) {
         const elementCenter = Point(
           random.value() * (width - margin * 2) + margin,
           random.value() * (height - margin * 2) + margin
@@ -324,6 +387,105 @@ function draw() {
         };
       }
 
+      console.log("===========");
+      console.table({
+        Seed: random.getSeed(),
+        Color: colorPicker.name,
+        Placement: placement.name,
+        Direction: directionFunction.name,
+        "Direction phase": elementDirection,
+        "Number of elements": numberOfElements,
+        Length: length,
+        initialWidth: initialWidth,
+        Zoom: flowFieldZoom,
+        Deformation: circleDeformationStrength,
+        Shaker: sinusoidalDeformationStrength,
+      });
+
+      //   if (
+      //     placement === placeElementCircle &&
+      //     directionFunction === directionConcentric
+      //   ) {
+      //     if (circleDeformationStrength < 0.8) {
+      //       circleDeformationStrength *= 1.3;
+      //     }
+      //     if (flowFieldZoom > 1000) {
+      //       flowFieldZoom *= 0.7;
+      //     }
+      //   }
+
+      const cadreWidth = margin / 6;
+      const cadre = [
+        PolygonFromRect(0, 0, width, margin / 6).toShape({
+          color: backgroundColor,
+          opacity: 1,
+        }),
+        PolygonFromRect(0, 0, margin / 6, height).toShape({
+          color: backgroundColor,
+          opacity: 1,
+        }),
+        PolygonFromRect(0, height - margin / 6, width, margin / 6).toShape({
+          color: backgroundColor,
+          opacity: 1,
+        }),
+        PolygonFromRect(width - margin / 6, 0, margin / 6, height).toShape({
+          color: backgroundColor,
+          opacity: 1,
+        }),
+      ];
+
+      const progressBarColor = Color.mix(
+        backgroundColor,
+        colorPicker.getSecondColor(backgroundColor),
+        0.55
+      );
+      const progressBarWidth = clamp(1, cadreWidth, Math.round(cadreWidth / 4));
+      function progressBar(progress) {
+        return cadre.concat([
+          // bottom left -> top left
+          PolygonFromRect(0, 0, progressBarWidth, height * progress).toShape({
+            color: progressBarColor,
+            opacity: 1,
+          }),
+          // top left -> top right
+          PolygonFromRect(
+            0,
+            height - progressBarWidth,
+            width * progress,
+            progressBarWidth
+          ).toShape({
+            color: progressBarColor,
+            opacity: 1,
+          }),
+          // top right -> bottom right
+          PolygonFromRect(
+            width - progressBarWidth,
+            height * (1 - progress),
+            progressBarWidth,
+            height * progress
+          ).toShape({
+            color: progressBarColor,
+            opacity: 1,
+          }),
+
+          // top left -> top right
+          PolygonFromRect(
+            width * (1 - progress),
+            0,
+            width * progress,
+            progressBarWidth
+          ).toShape({
+            color: progressBarColor,
+            opacity: 1,
+          }),
+        ]);
+      }
+
+      yield {
+        background: backgroundColor,
+        elements: progressBar(0),
+      };
+
       const grid = [];
 
       // Draw many elements. Position them on a sphere randomly. Once projected on a
@@ -348,15 +510,58 @@ function draw() {
         grid.sort((a, b) => a.position - b.position);
       }
 
-      return {
-        background: mainColor,
-        elements: [].concat(grid.map(({ element }) => element).flat()),
+      //   let elementsToRender = [];
+      //   for (let { element } of grid) {
+      //     elementsToRender.push(element);
+
+      //     if (elementsToRender.length > 2) {
+      //       const elementsToDraw = [].concat(elementsToRender);
+      //       elementsToRender = [];
+      //       yield {
+      //         background: null,
+      //         elements: elementsToDraw.flat(),
+      //       };
+      //     }
+      //   }
+
+      const numberOfElementsToDrawApproximation = grid
+        .map(({ element }) => element.length)
+        .reduce((acc, length) => acc + length, 0);
+
+      let numberOfRenderedElements = 0;
+      let elementsToRender = [];
+      for (let { element } of grid) {
+        for (let item of element) {
+          elementsToRender.push(item);
+          numberOfRenderedElements++;
+
+          const numberOfElementsPerFrame =
+            (numberOfElementsToDrawApproximation / getTimeToDraw()) * 16.6;
+          if (elementsToRender.length > numberOfElementsPerFrame) {
+            yield {
+              background: null,
+              elements: elementsToRender.concat(
+                progressBar(
+                  1 -
+                    numberOfRenderedElements /
+                      numberOfElementsToDrawApproximation
+                )
+              ),
+            };
+            elementsToRender = [];
+          }
+        }
+      }
+
+      yield {
+        background: null,
+        elements: cadre,
       };
     },
     {
       width: width,
       height: height,
-      resolution: 2,
+      resolution: clamp(1, 1.5, window.devicePixelRatio || 1),
       title: "Wave",
       animation: false,
       numberOfFrames: frames,
@@ -371,6 +576,25 @@ function draw() {
 draw();
 
 window.addEventListener("click", async () => {
-  document.querySelector("#container").innerHTML = "";
-  await draw();
+  draw();
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "+") {
+    timeToDraw = Math.max(2000, timeToDraw - 5000);
+  } else if (["-", "6"].includes(event.key)) {
+    timeToDraw = timeToDraw + 5000;
+  } else if (["<", "?"].includes(event.key)) {
+    alert(
+      `Hey! Julien Pradet speaking. Nice to meet you! You can find me at https://twitter.com/JulienPradet".
+Shortcuts:
+- "Space" to load a new one
+- "+" to speed up the pace
+- "-" to slow down the pace
+- "?" to display this alert
+`
+    );
+  } else if ([" "].includes(event.key)) {
+    draw();
+  }
 });
