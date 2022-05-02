@@ -145,7 +145,18 @@ async function draw() {
       // Deformation of the positions. If everything is at 0, it should be a
       // perfect circle
       let flowFieldZoom = mapRange(random.value(), 0, 1, width / 2, width);
-      let circleDeformationStrength = mapRange(random.value(), 0, 1, 0, 1.8);
+      const deformationClamp = 0.6;
+      let circleDeformationStrength = clamp(
+        deformationClamp,
+        Number.MAX_SAFE_INTEGER,
+        random.value() < 0.02
+          ? mapRange(Math.pow(random.value(), 0.3), 0, 1, 2, 10)
+          : mapRange(Math.pow(random.value(), 1.7), 0, 1, 0, 2)
+      );
+      if (circleDeformationStrength === deformationClamp) {
+        circleDeformationStrength = mapRange(random.value(), 0, 1, 0, 0.1);
+      }
+
       const sinusoidalDeformationFrequence = mapRange(
         random.value(),
         0,
@@ -157,6 +168,10 @@ async function draw() {
         directionFunction === directionFlat && random.value() > 0.5
           ? mapRange(random.value(), 0, 1, 0.06, 0.1)
           : 0;
+
+      if (sinusoidalDeformationStrength > 0) {
+        circleDeformationStrength *= 0.7;
+      }
 
       const center = Point(width / 2, height / 2);
 
@@ -293,14 +308,15 @@ async function draw() {
         return flatDirection;
       }
 
+      const inSphereThreshold = circleDeformationStrength > 1 ? 0.05 : 0.18;
       function placeElementCircle(index: number) {
-        const inSphere = random.value() > 0.15;
+        const inSphere = random.value() > inSphereThreshold;
 
         const sphereRadius = width / 2 - margin;
-        const circleRadius = sphereRadius + margin * 3;
+        const circleRadius = sphereRadius + margin * 5;
         const circleAngle = mapRange(random.value(), 0, 1, 0, Math.PI * 2);
         const circleDistance = mapRange(
-          Math.pow(random.value(), 2),
+          Math.pow(random.value(), 2.5),
           0,
           1,
           sphereRadius,
@@ -566,7 +582,7 @@ async function draw() {
       animation: false,
       numberOfFrames: frames,
       loop: false,
-      exportSketch: true,
+      exportSketch: false,
       embed: true,
       interactive: false,
     }
