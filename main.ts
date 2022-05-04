@@ -1,7 +1,7 @@
-import { canvasJp } from "canvas-jp";
+import { canvasJp, CanvasJpDrawable, CanvasJpStrokeStyle } from "canvas-jp";
 import { angle } from "canvas-jp/angle";
 import { CanvasJpArc, Circle } from "canvas-jp/Circle";
-import { CanvasJpColorHsv, Color } from "canvas-jp/Color";
+import { CanvasJpColorHsv, Color, Gradient } from "canvas-jp/Color";
 import { distance } from "canvas-jp/distance";
 import {
   inBounce,
@@ -11,10 +11,13 @@ import {
   inOutSine,
   inQuart,
   inSine,
+  outSine,
 } from "canvas-jp/ease";
+import { Line } from "canvas-jp/Line";
 import { CanvasJpPoint, Point } from "canvas-jp/Point";
 import { PolygonFromRect } from "canvas-jp/Polygon";
-import { translateVector } from "canvas-jp/transform";
+import { CanvasJpShape } from "canvas-jp/Shape";
+import { rotate, translate, translateVector } from "canvas-jp/transform";
 import { mapRange, clamp } from "canvas-sketch-util/math";
 
 const width = 1200;
@@ -29,7 +32,7 @@ const palette = [
   Color(37 / 360, 0.18, 0.99), // this one must be last for psychedelic
 ];
 
-const white = Color(0, 0, 1);
+const white = Color(0, 0, 0.99);
 const black = Color(0, 0, 0.2);
 let blackAndWhitePalette = [white, black];
 
@@ -41,16 +44,30 @@ function getTimeToDraw() {
 async function draw() {
   document.querySelector("#container").innerHTML = "";
 
-  return canvasJp(
+  await canvasJp(
     document.querySelector("#container"),
     function* (t, frame, random) {
       const margin = width / 10;
+
+      const mode = random.pick(
+        new Array(40).fill("normal").concat(["tiny", "rowdy", "rowdy"])
+      );
 
       // Elements variables
       let numberOfElements = Math.ceil(
         mapRange(random.value(), 0, 1, 420, 850)
       );
-      let initialWidth = mapRange(random.value(), 0, 1, width / 75, width / 40);
+      if (mode === "rowdy") {
+        numberOfElements = Math.ceil(numberOfElements / 2);
+      }
+      if (mode === "tiny") {
+        numberOfElements *= 3;
+      }
+      let initialWidth =
+        mode === "tiny"
+          ? mapRange(random.value(), 0, 1, width / 150, width / 200)
+          : mapRange(random.value(), 0, 1, width / 70, width / 40);
+
       const length = clamp(
         initialWidth,
         initialWidth * 30,
@@ -61,6 +78,7 @@ async function draw() {
         placeElementWave,
         //   placeElementGrid,
       ]);
+
       const directionFunction = random.pick(
         [
           directionConcentric,
@@ -78,6 +96,13 @@ async function draw() {
         1,
         0.8,
         12
+      );
+      const gradientRoughness = mapRange(
+        Math.pow(random.value(), 3),
+        0,
+        1,
+        0,
+        0.2
       );
 
       function blackAndWhite() {
@@ -106,6 +131,46 @@ async function draw() {
         };
       }
 
+      function dual() {
+        const mainColor = random.pick(palette);
+        const remainingColors = palette.filter((color) => color !== mainColor);
+        const mainSecondColor = random.pick(remainingColors);
+        const amountOfMainSecondColor = Math.round(random.gaussian(6, 1.5));
+
+        const glitchBaseColor = random.pick([white, black, black, black]);
+
+        const dualGlitchColor = Color.mix(
+          Color(
+            (mainColor.h + mainSecondColor.h) / 2,
+            glitchBaseColor.s,
+            glitchBaseColor.v
+          ),
+          mainColor,
+          0.9
+        );
+
+        const secondColors = new Array(amountOfMainSecondColor)
+          .fill(null)
+          .map(() => mainSecondColor)
+          .concat([
+            amountOfMainSecondColor > 7 && random.value() > 0.05
+              ? random.pick(
+                  remainingColors.filter((color) => color !== mainSecondColor)
+                )
+              : null,
+          ]);
+
+        return {
+          name: "monochrome",
+          getBackgroundColor: () => mainColor,
+          getProgressBarColor: () => mainSecondColor,
+          getMainColor: () => mainColor,
+          getSecondColor: (mainColor: CanvasJpColorHsv) =>
+            random.pick(secondColors),
+          getGlitchColor: () => dualGlitchColor,
+        };
+      }
+
       function multicolor() {
         const mainColor = random.pick(palette);
         return {
@@ -130,17 +195,21 @@ async function draw() {
       const colorPickerFactory = random.pick(
         []
           .concat(blackAndWhite)
-          .concat(new Array(5).fill(monochrome))
-          .concat(new Array(14).fill(multicolor))
+          .concat(new Array(4).fill(monochrome))
+          .concat(new Array(6).fill(dual))
+          .concat(new Array(10).fill(multicolor))
           .concat(psychedelic)
       );
       const colorPicker = colorPickerFactory();
       const backgroundColor = colorPicker.getBackgroundColor();
+      const hasNoGradient = random.value() < 0.05;
 
       const colorDirection =
-        random.value() > 0.5
+        random.value() > 0.8
           ? (progress) => progress
           : (progress) => 1 - progress;
+
+      const hasVariableSize = random.value() < 0.3;
 
       // Deformation of the positions. If everything is at 0, it should be a
       // perfect circle
@@ -151,10 +220,28 @@ async function draw() {
         Number.MAX_SAFE_INTEGER,
         random.value() < 0.02
           ? mapRange(Math.pow(random.value(), 0.3), 0, 1, 2, 10)
-          : mapRange(Math.pow(random.value(), 1.7), 0, 1, 0, 2)
+          : mode === "tiny"
+          ? mapRange(Math.pow(random.value(), 1.7), 0, 1, 0.4, 4)
+          : mapRange(Math.pow(random.value(), 1.7), 0, 1, 0.4, 2)
       );
       if (circleDeformationStrength === deformationClamp) {
         circleDeformationStrength = mapRange(random.value(), 0, 1, 0, 0.1);
+      }
+
+      const transformElement = random.pick(
+        new Array(4)
+          .fill(identity)
+          .concat([
+            random.value() < 0.2 && circleDeformationStrength < 2
+              ? symetry
+              : null,
+            line,
+            stripe,
+          ])
+          .filter(Boolean)
+      );
+      if (transformElement === symetry) {
+        numberOfElements /= 4;
       }
 
       const sinusoidalDeformationFrequence = mapRange(
@@ -173,17 +260,54 @@ async function draw() {
         circleDeformationStrength *= 0.7;
       }
 
-      const center = Point(width / 2, height / 2);
+      const center =
+        random.value() > 0.2
+          ? Point(
+              mapRange(random.value(), 0, 1, 0.2, 0.8) * width,
+              mapRange(random.value(), 0, 1, 0.2, 0.8) * height
+            )
+          : Point(width / 2, height / 2);
+      const maxDistance =
+        Math.max(
+          distance(Point(0, 0), center),
+          distance(Point(width, 0), center),
+          distance(Point(width, height), center),
+          distance(Point(0, height), center)
+        ) * clamp(0.3, 2, random.gaussian(0.6, 0.3));
 
       // One element is kind of one brush stroke. It starts big, grows smaller
       // and changes its color on its course.
       function makeElement(
         length: number,
         startPoint: CanvasJpPoint,
-        initialWidth: number
+        initialWidth: number,
+        indexProgress: number
       ) {
-        const endColor = colorPicker.getMainColor();
-        const startColor = colorPicker.getSecondColor(endColor);
+        if (random.value() < 0.5) {
+          const multiplier = mapRange(random.value(), 0, 1, 1, 2.5);
+          length /= multiplier;
+          initialWidth /= 3;
+        } else if (indexProgress < 0.2 && random.value() < 0.05) {
+          const multiplier = mapRange(
+            random.value(),
+            0,
+            1,
+            1,
+            mode === "tiny" ? 2 : 3
+          );
+          length *= multiplier;
+          initialWidth *= multiplier;
+        }
+
+        const isEraser = random.value() > (hasNoGradient ? 0.8 : 0.95);
+        const endColor = isEraser
+          ? backgroundColor
+          : colorPicker.getMainColor();
+        const startColor = isEraser
+          ? backgroundColor
+          : colorPicker.getSecondColor(endColor);
+        const opacityBreakpoint = random.gaussian(0.6, 0.05);
+        const opacityOffset = random.value() * 10000;
 
         // If two points have the same exact position, we still want to apply some
         // kind of offset on its deformation. If we don't, it makes things a bit too
@@ -270,15 +394,59 @@ async function draw() {
                   positionWithMainFlowField
                 );
 
+          const sizeRandomness =
+            mode === "rowdy"
+              ? clamp(
+                  0,
+                  Number.MAX_SAFE_INTEGER,
+                  mapRange(random.noise1D(progress * 100), -0.5, 0.5, 1, 3)
+                )
+              : hasVariableSize
+              ? clamp(
+                  0,
+                  1,
+                  mapRange(
+                    random.noise1D(
+                      (clamp(0, 1, progress) * length) / 5 + opacityOffset
+                    ),
+                    -1,
+                    1,
+                    0.1,
+                    0.6
+                  )
+                )
+              : 1;
+
           element.push(
-            Circle(positionWithSmallFlowField, initialWidth * (1 - progress), {
-              color: Color.mix(
-                startColor,
-                endColor,
-                colorDirection(colorProgress)
-              ),
-              opacity: 1,
-            })
+            Circle(
+              positionWithSmallFlowField,
+              initialWidth * (1 - progress) * sizeRandomness,
+              {
+                color: hasNoGradient
+                  ? startColor || colorPicker.getGlitchColor()
+                  : startColor && endColor
+                  ? Color.mix(
+                      startColor,
+                      endColor,
+                      colorDirection(
+                        clamp(
+                          0,
+                          1,
+                          random.gaussian(colorProgress, gradientRoughness)
+                        )
+                      )
+                    )
+                  : colorPicker.getGlitchColor(),
+                opacity:
+                  colorProgress > opacityBreakpoint
+                    ? inSine(
+                        mapRange(colorProgress, opacityBreakpoint, 1, 1, 0)
+                      )
+                    : mode === "rowdy"
+                    ? 0.8
+                    : 1,
+              }
+            )
           );
         }
 
@@ -289,8 +457,8 @@ async function draw() {
         random.value() < 0.75
           ? center
           : Point(
-              ((random.value() - 0.5) * width) / 3 + width / 2,
-              ((random.value() - 0.5) * height) / 3 + height / 2
+              mapRange(random.value(), 0, 1, 0.3, 0.7) * width,
+              mapRange(random.value(), 0, 1, 0.3, 0.7) * height
             );
 
       let elementDirection =
@@ -308,12 +476,12 @@ async function draw() {
         return flatDirection;
       }
 
-      const inSphereThreshold = circleDeformationStrength > 1 ? 0.05 : 0.18;
+      const inSphereThreshold = circleDeformationStrength > 1 ? 0.05 : 0.3;
       function placeElementCircle(index: number) {
         const inSphere = random.value() > inSphereThreshold;
 
-        const sphereRadius = width / 2 - margin;
-        const circleRadius = sphereRadius + margin * 5;
+        const sphereRadius = Math.min(width * 0.65, maxDistance) - margin;
+        const circleRadius = sphereRadius + margin * 3;
         const circleAngle = mapRange(random.value(), 0, 1, 0, Math.PI * 2);
         const circleDistance = mapRange(
           Math.pow(random.value(), 2.5),
@@ -361,7 +529,7 @@ async function draw() {
           random.value() * (height - margin * 2) + margin
         );
         const distanceFromCenter = distance(center, elementCenter);
-        const progress = 1 - distanceFromCenter / (width / 2);
+        const progress = 1 - distanceFromCenter / maxDistance;
         return {
           progress: clamp(0, 1, random.gaussian(progress, 0.2)),
           elementCenter,
@@ -403,6 +571,123 @@ async function draw() {
         };
       }
 
+      function identity(element) {
+        return element;
+      }
+
+      const symetryAngle = (random.value() * Math.PI) / 2;
+      const symetryCenter = Point(width / 2, height / 2);
+      function symetry(elements: CanvasJpArc[]) {
+        return elements.concat(
+          elements.map((element) => {
+            const elementAngle = angle(symetryCenter, element.center);
+            const elementDistance = distance(symetryCenter, element.center);
+            return Circle(
+              translateVector(
+                0,
+                symetryAngle,
+                translateVector(
+                  elementDistance,
+                  elementAngle + Math.PI,
+                  symetryCenter
+                )
+              ),
+              element.radius,
+              element.fill
+            );
+          })
+        );
+      }
+
+      function line(elements: CanvasJpArc[]): CanvasJpDrawable[] {
+        return [].concat(elements).concat(
+          elements
+            .map((element, index) => {
+              const prevElement = elements[index > 0 ? index - 1 : 0];
+              const progress =
+                index < elements.length * 0.2
+                  ? inSine(mapRange(index, 0, elements.length * 0.2, 0, 1))
+                  : index > elements.length * 0.8
+                  ? outSine(
+                      mapRange(
+                        index,
+                        elements.length * 0.8,
+                        elements.length,
+                        1,
+                        0
+                      )
+                    )
+                  : 1;
+              return Line(prevElement.center, element.center, {
+                color: element.fill.color,
+                opacity: 1,
+                width: element.radius * 0.3 * progress,
+                style: CanvasJpStrokeStyle.round,
+              });
+            })
+            .slice(1, -1)
+        );
+      }
+
+      const useOnlyBaseRotation = random.value() < 0.2;
+      const rotationOffset =
+        random.value() * (useOnlyBaseRotation ? Math.PI : Math.PI / 2);
+      const lengthFactor = useOnlyBaseRotation
+        ? 1
+        : clamp(0, 5, 1 / Math.cos(rotationOffset));
+      const baseSpacing = random.gaussian(width / 150, width / 200);
+      function stripe(elements: CanvasJpArc[]): CanvasJpDrawable[] {
+        let prevElement = elements[0];
+        return [].concat(
+          elements
+            .map((element, index) => {
+              if (
+                distance(prevElement.center, element.center) <
+                baseSpacing + random.gaussian(0, width / 200)
+              ) {
+                return;
+              }
+
+              const tangent =
+                (useOnlyBaseRotation
+                  ? 0
+                  : angle(prevElement.center, element.center) + Math.PI / 2) +
+                random.gaussian(0, 0.05);
+
+              prevElement = element;
+
+              return Line(
+                rotate(
+                  element.center,
+                  rotationOffset,
+                  translateVector(
+                    element.radius * lengthFactor,
+                    tangent,
+                    element.center
+                  )
+                ),
+                rotate(
+                  element.center,
+                  rotationOffset,
+                  translateVector(
+                    -element.radius * lengthFactor,
+                    tangent,
+                    element.center
+                  )
+                ),
+                {
+                  color: element.fill.color,
+                  opacity: element.fill.opacity,
+                  style: CanvasJpStrokeStyle.round,
+                  width: width / 300,
+                }
+              );
+            })
+            .filter(Boolean)
+            .slice(1, -1)
+        );
+      }
+
       console.log("===========");
       console.table({
         Seed: random.getSeed(),
@@ -416,6 +701,8 @@ async function draw() {
         Zoom: flowFieldZoom,
         Deformation: circleDeformationStrength,
         Shaker: sinusoidalDeformationStrength,
+        Transform: transformElement.name,
+        mode: mode,
       });
 
       //   if (
@@ -430,32 +717,34 @@ async function draw() {
       //     }
       //   }
 
-      const cadreWidth = margin / 6;
+      const cadreWidth = Math.round(width / 400);
+      const cadreColor = backgroundColor;
       const cadre = [
-        PolygonFromRect(0, 0, width, margin / 6).toShape({
-          color: backgroundColor,
+        PolygonFromRect(0, 0, width, cadreWidth).toShape({
+          color: cadreColor,
           opacity: 1,
         }),
-        PolygonFromRect(0, 0, margin / 6, height).toShape({
-          color: backgroundColor,
+        PolygonFromRect(0, 0, cadreWidth, height).toShape({
+          color: cadreColor,
           opacity: 1,
         }),
-        PolygonFromRect(0, height - margin / 6, width, margin / 6).toShape({
-          color: backgroundColor,
+        PolygonFromRect(0, height - cadreWidth, width, cadreWidth).toShape({
+          color: cadreColor,
           opacity: 1,
         }),
-        PolygonFromRect(width - margin / 6, 0, margin / 6, height).toShape({
-          color: backgroundColor,
+        PolygonFromRect(width - cadreWidth, 0, cadreWidth, height).toShape({
+          color: cadreColor,
           opacity: 1,
         }),
       ];
 
       const progressBarColor = Color.mix(
         backgroundColor,
-        colorPicker.getSecondColor(backgroundColor),
+        colorPicker.getSecondColor(backgroundColor) ||
+          colorPicker.getProgressBarColor(),
         0.55
       );
-      const progressBarWidth = clamp(1, cadreWidth, Math.round(cadreWidth / 4));
+      const progressBarWidth = width / 400;
       function progressBar(progress) {
         return cadre.concat([
           // bottom left -> top left
@@ -497,9 +786,14 @@ async function draw() {
         ]);
       }
 
+      const background = PolygonFromRect(0, 0, width, height).toShape({
+        opacity: 1,
+        color: backgroundColor,
+      });
+
       yield {
         background: backgroundColor,
-        elements: progressBar(0),
+        elements: [background].concat(progressBar(0)),
       };
 
       const grid = [];
@@ -515,10 +809,14 @@ async function draw() {
         const element = makeElement(
           length * progress * clamp(0, 3, random.gaussian(1, 0.1)),
           elementCenter,
-          initialWidth * progress * clamp(0, 3, random.gaussian(1, 0.3))
+          initialWidth * progress * clamp(0, 3, random.gaussian(1, 0.3)),
+          pointIndex / numberOfElements
         );
 
-        grid.push({ element: element, position: distanceFromCenter });
+        grid.push({
+          element: transformElement(element),
+          position: distanceFromCenter,
+        });
       }
 
       // Draw the outer elements first. This helps creating some sort of depth feeling
@@ -587,6 +885,22 @@ async function draw() {
       interactive: false,
     }
   );
+
+  function granulate() {
+    const canvas = document.querySelector("canvas");
+    const context = document.querySelector("canvas").getContext("2d");
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    for (let i = 0; i < imageData.data.length; i += 4) {
+      let grainAmount = (Math.random() - 0.5) * 15;
+      imageData.data[i] = imageData.data[i] + grainAmount;
+      imageData.data[i + 1] = imageData.data[i + 1] + grainAmount;
+      imageData.data[i + 2] = imageData.data[i + 2] + grainAmount;
+      imageData.data[i + 3] = imageData.data[i + 3] + grainAmount;
+    }
+
+    context.putImageData(imageData, 0, 0, 0, 0, canvas.width, canvas.height);
+  }
+  granulate();
 }
 
 draw();
