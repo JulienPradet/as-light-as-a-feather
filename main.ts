@@ -1,7 +1,7 @@
 import { canvasJp, CanvasJpDrawable, CanvasJpStrokeStyle } from "canvas-jp";
 import { angle } from "canvas-jp/angle";
 import { CanvasJpArc, Circle } from "canvas-jp/Circle";
-import { CanvasJpColorHsv, Color, Gradient } from "canvas-jp/Color";
+import { CanvasJpColorHsv, Color, Gradient, red } from "canvas-jp/Color";
 import { distance } from "canvas-jp/distance";
 import {
   inBounce,
@@ -50,7 +50,9 @@ async function draw() {
       const margin = width / 10;
 
       const mode = random.pick(
-        new Array(40).fill("normal").concat(["tiny", "rowdy", "rowdy"])
+        new Array(80)
+          .fill("normal")
+          .concat(["tiny", "rowdy", "rowdy", "rowdy", "rowdy"])
       );
 
       // Elements variables
@@ -66,12 +68,12 @@ async function draw() {
       let initialWidth =
         mode === "tiny"
           ? mapRange(random.value(), 0, 1, width / 150, width / 200)
-          : mapRange(random.value(), 0, 1, width / 70, width / 40);
+          : mapRange(random.value(), 0, 1, width / 60, width / 30);
 
-      const length = clamp(
+      let length = clamp(
         initialWidth,
         initialWidth * 30,
-        random.gaussian(initialWidth * 15, initialWidth * 3)
+        random.gaussian(initialWidth * 12, initialWidth * 5)
       );
       const placement = random.pick([
         placeElementCircle,
@@ -79,14 +81,45 @@ async function draw() {
         //   placeElementGrid,
       ]);
 
+      const shouldUseFlatDirection = [
+        placeElementCircle,
+        placeElementGrid,
+      ].includes(placement);
       const directionFunction = random.pick(
-        [
-          directionConcentric,
-          [placeElementCircle, placeElementGrid].includes(placement)
-            ? null
-            : directionFlat,
-        ].filter(Boolean)
+        []
+          .concat(
+            new Array(shouldUseFlatDirection ? 5 : 9).fill(directionConcentric)
+          )
+          .concat(
+            shouldUseFlatDirection ? new Array(4).fill(directionFlat) : null
+          )
+          .concat(directionRandom)
+          .filter(Boolean)
       );
+
+      if (directionFunction === directionRandom && length > initialWidth * 6) {
+        length /= 3;
+      }
+
+      let latestComputedDirectionPosition = null;
+      let latestDirectionOffset = null;
+      function directionRandom(
+        initialPosition: CanvasJpPoint,
+        usedCenter: CanvasJpPoint,
+        startPoint: CanvasJpPoint
+      ) {
+        if (latestComputedDirectionPosition !== startPoint) {
+          latestComputedDirectionPosition = startPoint;
+          latestDirectionOffset = distance(usedCenter, startPoint) * 0.004;
+        }
+        return (
+          random.noise2D(
+            latestDirectionOffset +
+              distance(initialPosition, startPoint) * 0.002,
+            latestDirectionOffset
+          ) * Math.PI
+        );
+      }
 
       // Control over the colors
       // Gradient precision defines how smooth the gradient should be.
@@ -102,7 +135,7 @@ async function draw() {
         0,
         1,
         0,
-        0.2
+        0.17
       );
 
       function blackAndWhite() {
@@ -195,21 +228,64 @@ async function draw() {
       const colorPickerFactory = random.pick(
         []
           .concat(blackAndWhite)
-          .concat(new Array(4).fill(monochrome))
-          .concat(new Array(6).fill(dual))
-          .concat(new Array(10).fill(multicolor))
+          .concat(new Array(3).fill(monochrome))
+          .concat(new Array(4).fill(dual))
+          .concat(new Array(12).fill(multicolor))
           .concat(psychedelic)
       );
       const colorPicker = colorPickerFactory();
       const backgroundColor = colorPicker.getBackgroundColor();
       const hasNoGradient = random.value() < 0.05;
 
-      const colorDirection =
-        random.value() > 0.8
-          ? (progress) => progress
-          : (progress) => 1 - progress;
+      const hasReversedColorDirection = random.value() > 0.8;
+      const colorLinearity = mapRange(random.value(), 0, 1, 0.4, 1);
 
-      const hasVariableSize = random.value() < 0.3;
+      const colorMixer = random.pick(
+        []
+          .concat(new Array(250).fill(Color.mix))
+          .concat(new Array(250).fill(oppositeMix))
+          .concat(randomMix)
+      );
+
+      function oppositeMix(
+        colorA: CanvasJpColorHsv,
+        colorB: CanvasJpColorHsv,
+        factor: number
+      ) {
+        let hueA = colorA.h;
+        let hueB = colorB.h;
+        if (hueA - hueB > 0.2) {
+          hueB += 1;
+        } else if (hueB - hueA > 0.2) {
+          hueA += 1;
+        }
+        return Color(
+          (hueA * factor + hueB * (1 - factor)) % 1,
+          colorA.s * factor + colorB.s * (1 - factor),
+          colorA.v * factor + colorB.v * (1 - factor)
+        );
+      }
+      function randomMix(
+        colorA: CanvasJpColorHsv,
+        colorB: CanvasJpColorHsv,
+        factor: number
+      ) {
+        return random.pick([Color.mix, oppositeMix])(colorA, colorB, factor);
+      }
+
+      const colorMixerAmplified = (colorA, colorB, factor) => {
+        const factorAmplified = Math.pow(
+          factor,
+          hasReversedColorDirection ? colorLinearity : 1 / colorLinearity
+        );
+        return colorMixer(colorA, colorB, factorAmplified);
+      };
+
+      const colorDirection = hasReversedColorDirection
+        ? (progress) => progress
+        : (progress) => 1 - progress;
+
+      const hasVariableSize = random.value() < 0.03;
 
       // Deformation of the positions. If everything is at 0, it should be a
       // perfect circle
@@ -228,22 +304,6 @@ async function draw() {
         circleDeformationStrength = mapRange(random.value(), 0, 1, 0, 0.1);
       }
 
-      const transformElement = random.pick(
-        new Array(4)
-          .fill(identity)
-          .concat([
-            random.value() < 0.2 && circleDeformationStrength < 2
-              ? symetry
-              : null,
-            line,
-            stripe,
-          ])
-          .filter(Boolean)
-      );
-      if (transformElement === symetry) {
-        numberOfElements /= 4;
-      }
-
       const sinusoidalDeformationFrequence = mapRange(
         random.value(),
         0,
@@ -260,6 +320,28 @@ async function draw() {
         circleDeformationStrength *= 0.7;
       }
 
+      const transformElement = random.pick(
+        new Array(16)
+          .fill(identity)
+          .concat([
+            random.value() < 0.2 && circleDeformationStrength < 2
+              ? symetry
+              : null,
+            random.value() < 0.2 && circleDeformationStrength < 2
+              ? symetry
+              : null,
+            line,
+            line,
+            sinusoidalDeformationStrength < 0.7 ? stripe : null,
+            sinusoidalDeformationStrength < 0.7 ? stripe : null,
+            transformBorder,
+          ])
+          .filter(Boolean)
+      );
+      if (transformElement === symetry) {
+        numberOfElements /= 4;
+      }
+
       const center =
         random.value() > 0.2
           ? Point(
@@ -267,13 +349,53 @@ async function draw() {
               mapRange(random.value(), 0, 1, 0.2, 0.8) * height
             )
           : Point(width / 2, height / 2);
+
       const maxDistance =
         Math.max(
           distance(Point(0, 0), center),
           distance(Point(width, 0), center),
           distance(Point(width, height), center),
           distance(Point(0, height), center)
-        ) * clamp(0.3, 2, random.gaussian(0.6, 0.3));
+        ) * clamp(0.4, 2, random.gaussian(0.7, 0.4));
+
+      const alternativeCenters = new Array(
+        random.value() > 0.8
+          ? Math.round(
+              clamp(0, Number.MAX_SAFE_INTEGER, Math.abs(random.gaussian(0, 2)))
+            )
+          : 0
+      )
+        .fill(null)
+        .map((_, index) => {
+          let alternativeCenter;
+          let attempt = 1000;
+          do {
+            alternativeCenter = Point(
+              mapRange(random.value(), 0, 1, 0.15, 0.85) * width,
+              mapRange(random.value(), 0, 1, 0.15, 0.85) * height
+            );
+            attempt--;
+          } while (
+            distance(center, alternativeCenter) <
+              Math.min(maxDistance * 0.8, height / 2) &&
+            attempt > 0
+          );
+          return alternativeCenter;
+        })
+        .filter(Boolean);
+
+      if (alternativeCenters.length > 0) {
+        initialWidth *= 0.9;
+      }
+
+      const allCenters = new Array(4).fill(center).concat(alternativeCenters);
+      const allDistances = allCenters.map((currentCenter) => {
+        if (currentCenter === center) {
+          return maxDistance * 0.7;
+        } else {
+          return maxDistance * clamp(0.3, 0.6, random.gaussian(0.45, 0.2));
+        }
+      });
 
       // One element is kind of one brush stroke. It starts big, grows smaller
       // and changes its color on its course.
@@ -281,12 +403,13 @@ async function draw() {
         length: number,
         startPoint: CanvasJpPoint,
         initialWidth: number,
-        indexProgress: number
+        indexProgress: number,
+        usedCenter: CanvasJpPoint
       ) {
         if (random.value() < 0.5) {
           const multiplier = mapRange(random.value(), 0, 1, 1, 2.5);
           length /= multiplier;
-          initialWidth /= 3;
+          initialWidth /= multiplier;
         } else if (indexProgress < 0.2 && random.value() < 0.05) {
           const multiplier = mapRange(
             random.value(),
@@ -340,7 +463,7 @@ async function draw() {
           // each stroke.
           // It was the first idea behind this sketch, but meh, didn't really work.
           // So it's strength was strongly reduced :)
-          const currentAngle = angle(center, initialPosition);
+          const currentAngle = angle(usedCenter, initialPosition);
           const clampingMax =
             placement === placeElementWave
               ? sinusoidalDeformationStrength
@@ -366,7 +489,11 @@ async function draw() {
             circleDeformationStrength;
 
           // Angle tangent to the circle
-          const direction = directionFunction(initialPosition);
+          const direction = directionFunction(
+            initialPosition,
+            usedCenter,
+            startPoint
+          );
 
           // Moving the circle normally to its next position
           initialPosition = translateVector(
@@ -378,19 +505,19 @@ async function draw() {
           // then apply the deformations
           const positionWithMainFlowField = translateVector(
             mainFlowFieldRandom,
-            angle(center, initialPosition),
+            angle(usedCenter, initialPosition),
             initialPosition
           );
           const positionWithSmallFlowField =
             placeElementGrid === placement
               ? translateVector(
                   flowField / 2,
-                  angle(center, initialPosition),
+                  angle(usedCenter, initialPosition),
                   positionWithMainFlowField
                 )
               : translateVector(
                   flowField,
-                  angle(center, initialPosition),
+                  angle(usedCenter, initialPosition),
                   positionWithMainFlowField
                 );
 
@@ -425,7 +552,7 @@ async function draw() {
                 color: hasNoGradient
                   ? startColor || colorPicker.getGlitchColor()
                   : startColor && endColor
-                  ? Color.mix(
+                  ? colorMixerAmplified(
                       startColor,
                       endColor,
                       colorDirection(
@@ -454,7 +581,7 @@ async function draw() {
       }
 
       const directionCenter =
-        random.value() < 0.75
+        random.value() < 0.85
           ? center
           : Point(
               mapRange(random.value(), 0, 1, 0.3, 0.7) * width,
@@ -463,9 +590,15 @@ async function draw() {
 
       let elementDirection =
         random.value() > 0.6 ? 0 : ((random.value() - 0.5) * Math.PI) / 2;
-      function directionConcentric(initialPosition: CanvasJpPoint) {
+      function directionConcentric(
+        initialPosition: CanvasJpPoint,
+        usedCenter: CanvasJpPoint
+      ) {
         return (
-          angle(directionCenter, initialPosition) +
+          angle(
+            directionCenter === center ? usedCenter : directionCenter,
+            initialPosition
+          ) +
           Math.PI / 2 -
           elementDirection
         );
@@ -477,8 +610,14 @@ async function draw() {
       }
 
       const inSphereThreshold = circleDeformationStrength > 1 ? 0.05 : 0.3;
+
       function placeElementCircle(index: number) {
-        const inSphere = random.value() > inSphereThreshold;
+        const centerIndex = Math.floor(random.value() * allCenters.length);
+        const usedCenter = allCenters[centerIndex];
+        const maxDistance = allDistances[centerIndex];
+
+        const inSphere =
+          random.value() > inSphereThreshold / (usedCenter === center ? 1 : 2);
 
         const sphereRadius = Math.min(width * 0.65, maxDistance) - margin;
         const circleRadius = sphereRadius + margin * 3;
@@ -496,15 +635,28 @@ async function draw() {
               circleDistance * Math.cos(circleAngle),
               circleDistance * Math.sin(circleAngle),
             ];
-        const elementCenter = Point(x + center.x, y + center.y);
+        const elementCenter = Point(x + usedCenter.x, y + usedCenter.y);
 
         // Change some base parameters based on the position of the element.
         // If it's far from the center, make it smaller.
-        const distanceFromCenter = distance(center, elementCenter);
+        const distanceFromCenter = distance(usedCenter, elementCenter);
+
+        let closestCenter = usedCenter;
+        let maxDistanceFromCenters = distanceFromCenter;
+        for (let centerItem of allCenters) {
+          let distanceFromCenter = distance(centerItem, elementCenter);
+          if (distanceFromCenter < maxDistanceFromCenters) {
+            maxDistanceFromCenters = distanceFromCenter;
+            closestCenter = centerItem;
+          }
+        }
+
         const progress = inSphere
-          ? distanceFromCenter / sphereRadius
+          ? maxDistanceFromCenters / sphereRadius
           : 1 -
-            (distanceFromCenter - sphereRadius) / (circleRadius - sphereRadius);
+            (maxDistanceFromCenters - sphereRadius) /
+              (circleRadius - sphereRadius);
+
         return {
           progress: clamp(
             0,
@@ -516,10 +668,11 @@ async function draw() {
             0,
             1,
             random.gaussian(
-              inSphere ? distanceFromCenter : distanceFromCenter / 2,
+              inSphere ? maxDistanceFromCenters : maxDistanceFromCenters / 2,
               0.2
             )
           ),
+          usedCenter: closestCenter,
         };
       }
 
@@ -538,6 +691,7 @@ async function draw() {
             1,
             random.gaussian(distanceFromCenter, 0.2)
           ),
+          usedCenter: center,
         };
       }
 
@@ -631,7 +785,7 @@ async function draw() {
 
       const useOnlyBaseRotation = random.value() < 0.2;
       const rotationOffset =
-        random.value() * (useOnlyBaseRotation ? Math.PI : Math.PI / 2);
+        random.value() * (useOnlyBaseRotation ? Math.PI : Math.PI * 0.4);
       const lengthFactor = useOnlyBaseRotation
         ? 1
         : clamp(0, 5, 1 / Math.cos(rotationOffset));
@@ -688,6 +842,22 @@ async function draw() {
         );
       }
 
+      function transformBorder(elements: CanvasJpArc[]) {
+        const threshold = clamp(
+          1,
+          Number.MAX_SAFE_INTEGER,
+          Math.round(elements.length * 0.05)
+        );
+        return elements.concat(
+          elements.slice(threshold, -threshold).map((element) => {
+            return Circle(element.center, element.radius * 0.8, {
+              color: backgroundColor,
+              opacity: 0.08,
+            });
+          })
+        );
+      }
+
       console.log("===========");
       console.table({
         Seed: random.getSeed(),
@@ -738,7 +908,7 @@ async function draw() {
         }),
       ];
 
-      const progressBarColor = Color.mix(
+      const progressBarColor = colorMixerAmplified(
         backgroundColor,
         colorPicker.getSecondColor(backgroundColor) ||
           colorPicker.getProgressBarColor(),
@@ -793,7 +963,18 @@ async function draw() {
 
       yield {
         background: backgroundColor,
-        elements: [background].concat(progressBar(0)),
+        elements: [].concat(background).concat(progressBar(0)),
+        //   .concat(
+        //     allCenters
+        //       .map((center, index) => [
+        //         Circle(center, allDistances[index], { color: red, opacity: 1 }),
+        //         Circle(center, 5, {
+        //           color: black,
+        //           opacity: 1,
+        //         }),
+        //       ])
+        //       .flat()
+        //   ),
       };
 
       const grid = [];
@@ -805,12 +986,15 @@ async function draw() {
         if (!placementResult) {
           continue;
         }
-        const { progress, elementCenter, distanceFromCenter } = placementResult;
+        const { progress, elementCenter, distanceFromCenter, usedCenter } =
+          placementResult;
+
         const element = makeElement(
           length * progress * clamp(0, 3, random.gaussian(1, 0.1)),
           elementCenter,
           initialWidth * progress * clamp(0, 3, random.gaussian(1, 0.3)),
-          pointIndex / numberOfElements
+          pointIndex / numberOfElements,
+          usedCenter
         );
 
         grid.push({
@@ -900,7 +1084,7 @@ async function draw() {
 
     context.putImageData(imageData, 0, 0, 0, 0, canvas.width, canvas.height);
   }
-  granulate();
+  //   granulate();
 }
 
 draw();
