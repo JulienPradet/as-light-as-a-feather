@@ -88,10 +88,12 @@ async function draw() {
       const directionFunction = random.pick(
         []
           .concat(
-            new Array(shouldUseFlatDirection ? 5 : 9).fill(directionConcentric)
+            new Array(shouldUseFlatDirection ? 10 : 20).fill(
+              directionConcentric
+            )
           )
           .concat(
-            shouldUseFlatDirection ? new Array(4).fill(directionFlat) : null
+            shouldUseFlatDirection ? new Array(10).fill(directionFlat) : null
           )
           .concat(directionRandom)
           .filter(Boolean)
@@ -321,21 +323,20 @@ async function draw() {
       }
 
       const transformElement = random.pick(
-        new Array(16)
+        new Array(32)
           .fill(identity)
-          .concat([
-            random.value() < 0.2 && circleDeformationStrength < 2
-              ? symetry
-              : null,
-            random.value() < 0.2 && circleDeformationStrength < 2
-              ? symetry
-              : null,
-            line,
-            line,
-            sinusoidalDeformationStrength < 0.7 ? stripe : null,
-            sinusoidalDeformationStrength < 0.7 ? stripe : null,
-            transformBorder,
-          ])
+          .concat(
+            new Array(3)
+              .fill([
+                random.value() < 0.2 && circleDeformationStrength < 2
+                  ? symetry
+                  : null,
+                line,
+                sinusoidalDeformationStrength < 0.7 ? stripe : null,
+              ])
+              .flat()
+          )
+          .concat([transformBorder])
           .filter(Boolean)
       );
       if (transformElement === symetry) {
@@ -416,13 +417,13 @@ async function draw() {
             0,
             1,
             1,
-            mode === "tiny" ? 2 : 3
+            mode === "tiny" ? 1.5 : 2
           );
           length *= multiplier;
           initialWidth *= multiplier;
         }
 
-        const isEraser = random.value() > (hasNoGradient ? 0.8 : 0.95);
+        const isEraser = random.value() > (hasNoGradient ? 0.7 : 0.95);
         const endColor = isEraser
           ? backgroundColor
           : colorPicker.getMainColor();
