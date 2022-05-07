@@ -77,7 +77,7 @@ async function draw({
       let initialWidth =
         mode === "tiny"
           ? mapRange(random.value(), 0, 1, width / 150, width / 200)
-          : mapRange(random.value(), 0, 1, width / 43, width / 30);
+          : mapRange(random.value(), 0, 1, width / 47, width / 35);
 
       let length = clamp(
         initialWidth * (mode === "rowdy" ? 3 : 1),
@@ -92,7 +92,9 @@ async function draw({
         placeElementWave,
         placeElementWave,
         placeElementRandom,
-        //   placeElementGrid,
+        placeElementGrid,
+        placeElementGrid,
+        placeElementGrid,
       ]);
 
       const shouldUseFlatDirection = [
@@ -138,6 +140,39 @@ async function draw({
         );
       }
 
+      // Deformation of the positions. If everything is at 0, it should be a
+      // perfect circle
+      let flowFieldZoom = mapRange(random.value(), 0, 1, width / 2, width);
+      const deformationClamp = 0.6;
+      let circleDeformationStrength = clamp(
+        deformationClamp,
+        Number.MAX_SAFE_INTEGER,
+        random.value() < 0.02
+          ? mapRange(Math.pow(random.value(), 0.3), 0, 1, 2, 10)
+          : mode === "tiny"
+          ? mapRange(Math.pow(random.value(), 1.7), 0, 1, 0.4, 4)
+          : mapRange(Math.pow(random.value(), 1.7), 0, 1, 0.4, 2)
+      );
+      if (circleDeformationStrength === deformationClamp) {
+        circleDeformationStrength = mapRange(random.value(), 0, 1, 0, 0.1);
+      }
+
+      const sinusoidalDeformationFrequence = mapRange(
+        random.value(),
+        0,
+        1,
+        20,
+        30
+      );
+      const sinusoidalDeformationStrength =
+        directionFunction === directionFlat && random.value() > 0.5
+          ? mapRange(random.value(), 0, 1, 0.06, 0.1)
+          : 0;
+
+      if (sinusoidalDeformationStrength > 0) {
+        circleDeformationStrength *= 0.7;
+      }
+
       // Control over the colors
       // Gradient precision defines how smooth the gradient should be.
       const gradientPrecision = mapRange(
@@ -161,9 +196,15 @@ async function draw({
 
       const colorMixer = random.pick(
         []
-          .concat(new Array(250).fill(Color.mix))
-          .concat(new Array(250).fill(oppositeMix))
-          .concat(randomMix)
+          .concat(new Array(100).fill(Color.mix))
+          .concat(new Array(100).fill(oppositeMix))
+          .concat(
+            gradientPrecision < 1.5 &&
+              circleDeformationStrength < 1.5 &&
+              mode !== "rowdy"
+              ? [randomMix]
+              : []
+          )
       );
 
       function blackAndWhite() {
@@ -213,7 +254,6 @@ async function draw({
         const excludedColors =
           excludedPalettes.find((item) => item.mainColor === mainColor)
             ?.excludedChoices || [];
-        console.log(mainColor, excludedColors, excludedPalettes);
         return palette
           .filter((color) => excludedColors.every((item) => item !== color))
           .filter((color) => color !== mainColor);
@@ -292,14 +332,17 @@ async function draw({
         };
       }
 
-      const colorPickerFactory = random.pick(
-        []
-          .concat(blackAndWhite)
-          .concat(new Array(3).fill(monochrome))
-          .concat(new Array(4).fill(dual))
-          .concat(new Array(12).fill(multicolor))
-          .concat(psychedelic)
-      );
+      const colorPickerFactory =
+        colorMixer === randomMix
+          ? psychedelic
+          : random.pick(
+              []
+                .concat(blackAndWhite)
+                .concat(new Array(3).fill(monochrome))
+                .concat(new Array(4).fill(dual))
+                .concat(new Array(12).fill(multicolor))
+                .concat(psychedelic)
+            );
       const colorPicker = colorPickerFactory();
       const backgroundColor = colorPicker.getBackgroundColor();
       const hasNoGradient = random.value() < 0.05;
@@ -346,39 +389,6 @@ async function draw({
         : (progress) => 1 - progress;
 
       const hasVariableSize = random.value() < 0.03;
-
-      // Deformation of the positions. If everything is at 0, it should be a
-      // perfect circle
-      let flowFieldZoom = mapRange(random.value(), 0, 1, width / 2, width);
-      const deformationClamp = 0.6;
-      let circleDeformationStrength = clamp(
-        deformationClamp,
-        Number.MAX_SAFE_INTEGER,
-        random.value() < 0.02
-          ? mapRange(Math.pow(random.value(), 0.3), 0, 1, 2, 10)
-          : mode === "tiny"
-          ? mapRange(Math.pow(random.value(), 1.7), 0, 1, 0.4, 4)
-          : mapRange(Math.pow(random.value(), 1.7), 0, 1, 0.4, 2)
-      );
-      if (circleDeformationStrength === deformationClamp) {
-        circleDeformationStrength = mapRange(random.value(), 0, 1, 0, 0.1);
-      }
-
-      const sinusoidalDeformationFrequence = mapRange(
-        random.value(),
-        0,
-        1,
-        20,
-        30
-      );
-      const sinusoidalDeformationStrength =
-        directionFunction === directionFlat && random.value() > 0.5
-          ? mapRange(random.value(), 0, 1, 0.06, 0.1)
-          : 0;
-
-      if (sinusoidalDeformationStrength > 0) {
-        circleDeformationStrength *= 0.7;
-      }
 
       const transformElement = random.pick(
         new Array(25)
@@ -443,9 +453,7 @@ async function draw({
 
       const alternativeCenters = new Array(
         random.value() > 0.8
-          ? Math.round(
-              clamp(0, Number.MAX_SAFE_INTEGER, Math.abs(random.gaussian(0, 2)))
-            )
+          ? Math.round(clamp(0, 3, Math.abs(random.gaussian(0, 2))))
           : 0
       )
         .fill(null)
@@ -779,7 +787,7 @@ async function draw({
       }
 
       let waveDirection = (progress) => Math.pow(progress, 0.8);
-      const waveMargin = width / 6;
+      const waveMargin = width / 12;
       function placeElementWave(index: number) {
         const elementCenter = Point(
           random.value() * (width - waveMargin * 2) + waveMargin,
@@ -826,33 +834,55 @@ async function draw({
         };
       }
 
-      const gridSpacingModifier = mapRange(random.value(), 0, 1, 0.6, 1);
+      const corners = [
+        Point(waveMargin, waveMargin),
+        Point(width - waveMargin, waveMargin),
+        Point(width - waveMargin, height - waveMargin),
+        Point(waveMargin, height - waveMargin),
+      ];
+      const gridSpacingModifier = mapRange(random.value(), 0, 1, 1, 1.5);
+      console.log(gridSpacingModifier, circleDeformationStrength);
+      if (placement === placeElementGrid && circleDeformationStrength < 1) {
+        numberOfElements = numberOfElements * gridSpacingModifier;
+      }
+      const maxGridDistance = Math.max(
+        ...corners.map((corner) => distance(corner, center))
+      );
+
       function placeElementGrid(index: number) {
-        const numberOfElementsPerRow = Math.round(
-          Math.sqrt(numberOfElements) * gridSpacingModifier
-        );
-        const gridSpacing =
-          (width - margin * 2 - length) / numberOfElementsPerRow;
+        const numberOfElementsPerRow = Math.round(Math.sqrt(numberOfElements));
+        const gridSpacingColumns = width / numberOfElementsPerRow;
+        const gridSpacingRows = height / numberOfElementsPerRow;
 
         const x = index % numberOfElementsPerRow;
         const y = Math.floor(index / numberOfElementsPerRow);
 
-        if (
-          y * numberOfElementsPerRow + numberOfElementsPerRow >
-          numberOfElements * gridSpacingModifier * gridSpacingModifier
-        ) {
-          return;
-        }
+        // if (
+        //   y * numberOfElementsPerRow + numberOfElementsPerRow >
+        //   numberOfElements * gridSpacingModifier * gridSpacingModifier
+        // ) {
+        //   return;
+        // }
+
+        const flatDirectionOffset =
+          directionFunction === directionFlat ? 0.75 * length : 0;
 
         const elementCenter = Point(
-          x * gridSpacing + margin + length / 2,
-          y * gridSpacing + margin + length / 2
+          x * gridSpacingColumns -
+            (flatDirectionOffset * Math.cos(flatDirection)) / 2 +
+            random.gaussian(0, gridSpacingColumns / 8),
+          y * gridSpacingRows -
+            (flatDirectionOffset * Math.sin(flatDirection)) / 2 +
+            random.gaussian(0, gridSpacingColumns / 8)
         );
 
         return {
           progress: clamp(0, 1, random.gaussian(0.75, 0.2)),
           elementCenter,
-          distanceFromCenter: 1,
+          distanceFromCenter:
+            distance(center, elementCenter) / maxGridDistance +
+            random.gaussian(0, 0.3),
+          usedCenter: center,
         };
       }
 
@@ -1164,25 +1194,78 @@ async function draw({
           usedCenter
         );
 
-        grid.push({
-          element: transformElement(
-            element.filter((shape) => isVisible(shape.center))
-          ),
-          position: distanceFromCenter,
+        const lengthOfFade = 10;
+        const wiggle = random.gaussian(0, 0.15);
+        let continueToAddShapes = true;
+        const cutElement = element.filter((shape) => {
+          continueToAddShapes = continueToAddShapes && isVisible(shape, wiggle);
+          return continueToAddShapes;
         });
+        const cutElementWithFade = cutElement.slice(0, -lengthOfFade).concat(
+          cutElement.slice(-lengthOfFade).map((shape, index) => {
+            const radiusProgress = 1 - index / lengthOfFade;
+            const opacityProgress =
+              index === lengthOfFade - 1
+                ? 0.85
+                : index === lengthOfFade - 2
+                ? 0.95
+                : 1;
+            return Circle(
+              shape.center,
+              shape.radius *
+                mapRange(Math.pow(radiusProgress, 0.5), 0, 1, 0.3, 1),
+              {
+                ...shape.fill,
+                opacity: shape.fill.opacity * opacityProgress,
+              }
+            );
+          })
+        );
+
+        const cutElementDistance =
+          cutElementWithFade.length > 1
+            ? distance(
+                cutElementWithFade[0].center,
+                cutElementWithFade[cutElementWithFade.length - 1].center
+              )
+            : 0;
+        const elementDistance =
+          element.length > 1
+            ? distance(element[0].center, element[element.length - 1].center)
+            : 0;
+
+        if (
+          elementDistance > 0 &&
+          cutElementDistance > 0 &&
+          (cutElementDistance > width / 30 || elementDistance <= width / 30)
+        ) {
+          grid.push({
+            element: transformElement(cutElementWithFade),
+            position: distanceFromCenter,
+          });
+        }
       }
 
       // Draw the outer elements first. This helps creating some sort of depth feeling
-      if (directionFunction !== directionFlat) {
+      if (
+        directionFunction !== directionFlat ||
+        placement === placeElementGrid
+      ) {
         grid.sort((a, b) => a.position - b.position);
       }
 
-      function isVisible(position) {
+      if (placement === placeElementGrid) {
+        const newLocal = mapRange(Math.pow(random.value(), 7), 0, 1, 0.3, 0.8);
+        grid = grid.slice(0, grid.length * newLocal);
+      }
+
+      function isVisible(shape: CanvasJpArc, wiggle: number) {
+        const margin = waveMargin + shape.radius * (0.6 + wiggle);
         return (
-          position.x > waveMargin &&
-          position.x < width - waveMargin &&
-          position.y > waveMargin &&
-          position.y < height - waveMargin
+          shape.center.x > margin &&
+          shape.center.x < width - margin &&
+          shape.center.y > margin &&
+          shape.center.y < height - margin
         );
       }
 
@@ -1231,7 +1314,6 @@ async function draw({
                 ]
               : [];
             if (shouldFade) {
-              console.log("fade");
               numberOfFadeRendered++;
             }
 
@@ -1283,7 +1365,7 @@ async function draw({
     const context = document.querySelector("canvas").getContext("2d");
     const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
     for (let i = 0; i < imageData.data.length; i += 4) {
-      let grainAmount = (Math.random() - 0.5) * 25;
+      let grainAmount = (Math.random() - 0.5) * 15;
       imageData.data[i] = imageData.data[i] + grainAmount;
       imageData.data[i + 1] = imageData.data[i + 1] + grainAmount;
       imageData.data[i + 2] = imageData.data[i + 2] + grainAmount;
@@ -1292,7 +1374,7 @@ async function draw({
 
     context.putImageData(imageData, 0, 0, 0, 0, canvas.width, canvas.height);
   }
-  //   granulate();
+  granulate();
   console.log(performance.now() - start);
 }
 
