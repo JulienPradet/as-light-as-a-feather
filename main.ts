@@ -41,12 +41,17 @@ function getTimeToDraw() {
   return timeToDraw;
 }
 
-async function draw() {
+async function draw(forceSeed?: number) {
   document.querySelector("#container").innerHTML = "";
 
   await canvasJp(
     document.querySelector("#container"),
     function* (t, frame, random) {
+      if (forceSeed) {
+        random.setSeed(forceSeed);
+      }
+      const seed = random.getSeed();
+      window.location.hash = seed.toString();
       const margin = width / 10;
 
       const mode = random.pick(
@@ -389,7 +394,10 @@ async function draw() {
         initialWidth *= 0.9;
       }
 
-      const allCenters = new Array(4).fill(center).concat(alternativeCenters);
+      const mainCenterProbability = 4;
+      const allCenters = new Array(mainCenterProbability)
+        .fill(center)
+        .concat(alternativeCenters);
       const allDistances = allCenters.map((currentCenter) => {
         if (currentCenter === center) {
           return maxDistance * 0.7;
@@ -397,6 +405,14 @@ async function draw() {
           return maxDistance * clamp(0.3, 0.6, random.gaussian(0.45, 0.2));
         }
       });
+
+      if (
+        allDistances[0] < width / 3 &&
+        allDistances.length === mainCenterProbability
+      ) {
+        console.log("test");
+        numberOfElements /= 2;
+      }
 
       // One element is kind of one brush stroke. It starts big, grows smaller
       // and changes its color on its course.
@@ -859,6 +875,12 @@ async function draw() {
         );
       }
 
+      const shadeOffset = translateVector(
+        mapRange(random.value(), 0, 1, width / 200, width / 150),
+        random.value() * Math.PI * 2,
+        Point(0, 0)
+      );
+
       console.log("===========");
       console.table({
         Seed: random.getSeed(),
@@ -1088,7 +1110,7 @@ async function draw() {
   //   granulate();
 }
 
-draw();
+draw(Number(window.location.hash.slice(1)));
 
 window.addEventListener("click", async () => {
   draw();
