@@ -41,7 +41,10 @@ function getTimeToDraw() {
   return timeToDraw;
 }
 
-async function draw(forceSeed?: number) {
+async function draw({
+  forceSeed,
+  animate = true,
+}: { forceSeed?: number; animate?: boolean } = {}) {
   document.querySelector("#container").innerHTML = "";
 
   await canvasJp(
@@ -328,7 +331,7 @@ async function draw(forceSeed?: number) {
       }
 
       const transformElement = random.pick(
-        new Array(32)
+        new Array(25)
           .fill(identity)
           .concat(
             new Array(3)
@@ -344,8 +347,17 @@ async function draw(forceSeed?: number) {
           .concat([transformBorder])
           .filter(Boolean)
       );
+
       if (transformElement === symetry) {
         numberOfElements /= 4;
+      } else if (transformElement === stripe) {
+        if (length < width / 20) {
+          length = clamp(
+            initialWidth * 8,
+            initialWidth * 30,
+            random.gaussian(initialWidth * 12, initialWidth * 5)
+          );
+        }
       }
 
       const center =
@@ -410,7 +422,6 @@ async function draw(forceSeed?: number) {
         allDistances[0] < width / 3 &&
         allDistances.length === mainCenterProbability
       ) {
-        console.log("test");
         numberOfElements /= 2;
       }
 
@@ -561,34 +572,40 @@ async function draw(forceSeed?: number) {
                 )
               : 1;
 
+          let opacity =
+            colorProgress > opacityBreakpoint
+              ? inSine(mapRange(colorProgress, opacityBreakpoint, 1, 1, 0))
+              : mode === "rowdy"
+              ? 0.8
+              : 1;
+
+          let color = hasNoGradient
+            ? startColor || colorPicker.getGlitchColor()
+            : startColor && endColor
+            ? colorMixerAmplified(
+                startColor,
+                endColor,
+                colorDirection(
+                  clamp(0, 1, random.gaussian(colorProgress, gradientRoughness))
+                )
+              )
+            : colorPicker.getGlitchColor();
+
+          if (hasNoGradient && gradientRoughness > 0 && !isEraser) {
+            color = Color(
+              color.h,
+              color.s,
+              color.v * (1 - clamp(0, 1, random.gaussian(0, gradientRoughness)))
+            );
+          }
+
           element.push(
             Circle(
               positionWithSmallFlowField,
               initialWidth * (1 - progress) * sizeRandomness,
               {
-                color: hasNoGradient
-                  ? startColor || colorPicker.getGlitchColor()
-                  : startColor && endColor
-                  ? colorMixerAmplified(
-                      startColor,
-                      endColor,
-                      colorDirection(
-                        clamp(
-                          0,
-                          1,
-                          random.gaussian(colorProgress, gradientRoughness)
-                        )
-                      )
-                    )
-                  : colorPicker.getGlitchColor(),
-                opacity:
-                  colorProgress > opacityBreakpoint
-                    ? inSine(
-                        mapRange(colorProgress, opacityBreakpoint, 1, 1, 0)
-                      )
-                    : mode === "rowdy"
-                    ? 0.8
-                    : 1,
+                color: color,
+                opacity: opacity,
               }
             )
           );
@@ -693,20 +710,23 @@ async function draw(forceSeed?: number) {
         };
       }
 
+      let waveDirection = random.pick([
+        (progress) => Math.pow(progress, 0.8),
+        (progress) => Math.pow(1 - progress, 2),
+      ]);
+      const waveMargin = random.pick([margin, 0]);
       function placeElementWave(index: number) {
         const elementCenter = Point(
-          random.value() * (width - margin * 2) + margin,
-          random.value() * (height - margin * 2) + margin
+          random.value() * (width - waveMargin * 2) + waveMargin,
+          random.value() * (height - waveMargin * 2) + waveMargin
         );
         const distanceFromCenter = distance(center, elementCenter);
-        const progress = 1 - distanceFromCenter / maxDistance;
+        const progress = 1 - distanceFromCenter / (maxDistance - waveMargin);
         return {
-          progress: clamp(0, 1, random.gaussian(progress, 0.2)),
+          progress: waveDirection(clamp(0, 1, random.gaussian(progress, 0.2))),
           elementCenter,
-          distanceFromCenter: clamp(
-            0,
-            1,
-            random.gaussian(distanceFromCenter, 0.2)
+          distanceFromCenter: waveDirection(
+            clamp(0, 1, random.gaussian(distanceFromCenter, 0.2))
           ),
           usedCenter: center,
         };
@@ -789,6 +809,7 @@ async function draw(forceSeed?: number) {
                       )
                     )
                   : 1;
+
               return Line(prevElement.center, element.center, {
                 color: element.fill.color,
                 opacity: 1,
@@ -827,35 +848,34 @@ async function draw(forceSeed?: number) {
 
               prevElement = element;
 
-              return Line(
-                rotate(
-                  element.center,
-                  rotationOffset,
-                  translateVector(
-                    element.radius * lengthFactor,
-                    tangent,
-                    element.center
-                  )
-                ),
-                rotate(
-                  element.center,
-                  rotationOffset,
-                  translateVector(
-                    -element.radius * lengthFactor,
-                    tangent,
-                    element.center
-                  )
-                ),
-                {
-                  color: element.fill.color,
-                  opacity: element.fill.opacity,
-                  style: CanvasJpStrokeStyle.round,
-                  width: width / 300,
-                }
+              const start = rotate(
+                element.center,
+                rotationOffset,
+                translateVector(
+                  element.radius * lengthFactor,
+                  tangent,
+                  element.center
+                )
               );
+              const end = rotate(
+                element.center,
+                rotationOffset,
+                translateVector(
+                  -element.radius * lengthFactor,
+                  tangent,
+                  element.center
+                )
+              );
+
+              return Line(start, end, {
+                color: element.fill.color,
+                opacity: element.fill.opacity,
+                style: CanvasJpStrokeStyle.round,
+                width: width / 300,
+              });
             })
             .filter(Boolean)
-            .slice(1, -1)
+            .slice(0, -1)
         );
       }
 
@@ -1045,39 +1065,49 @@ async function draw(forceSeed?: number) {
       //     }
       //   }
 
-      const numberOfElementsToDrawApproximation = grid
-        .map(({ element }) => element.length)
-        .reduce((acc, length) => acc + length, 0);
+      if (animate) {
+        const numberOfElementsToDrawApproximation = grid
+          .map(({ element }) => element.length)
+          .reduce((acc, length) => acc + length, 0);
 
-      let numberOfRenderedElements = 0;
-      let elementsToRender = [];
-      for (let { element } of grid) {
-        for (let item of element) {
-          elementsToRender.push(item);
-          numberOfRenderedElements++;
+        let numberOfRenderedElements = 0;
+        let elementsToRender = [];
+        for (let { element } of grid) {
+          for (let item of element) {
+            elementsToRender.push(item);
+            numberOfRenderedElements++;
 
-          const numberOfElementsPerFrame =
-            (numberOfElementsToDrawApproximation / getTimeToDraw()) * 16.6;
-          if (elementsToRender.length > numberOfElementsPerFrame) {
-            yield {
-              background: null,
-              elements: elementsToRender.concat(
-                progressBar(
-                  1 -
-                    numberOfRenderedElements /
-                      numberOfElementsToDrawApproximation
-                )
-              ),
-            };
-            elementsToRender = [];
+            const numberOfElementsPerFrame =
+              (numberOfElementsToDrawApproximation / getTimeToDraw()) * 16.6;
+            if (elementsToRender.length > numberOfElementsPerFrame) {
+              yield {
+                background: null,
+                elements: elementsToRender.concat(
+                  progressBar(
+                    1 -
+                      numberOfRenderedElements /
+                        numberOfElementsToDrawApproximation
+                  )
+                ),
+              };
+              elementsToRender = [];
+            }
           }
         }
-      }
 
-      yield {
-        background: null,
-        elements: cadre,
-      };
+        yield {
+          background: null,
+          elements: cadre,
+        };
+      } else {
+        yield {
+          background: null,
+          elements: grid
+            .map(({ element }) => element)
+            .flat()
+            .concat(cadre),
+        };
+      }
     },
     {
       width: width,
@@ -1110,17 +1140,43 @@ async function draw(forceSeed?: number) {
   //   granulate();
 }
 
-draw(Number(window.location.hash.slice(1)));
+draw({
+  forceSeed: Number(window.location.hash.slice(1)),
+});
 
 window.addEventListener("click", async () => {
   draw();
 });
 
-window.addEventListener("keydown", (event) => {
+window.addEventListener("keydown", async (event) => {
   if (event.key === "+") {
     timeToDraw = Math.max(2000, timeToDraw - 5000);
   } else if (["-", "6"].includes(event.key)) {
     timeToDraw = timeToDraw + 5000;
+  } else if (event.key === "g") {
+    const directoryHandle = await window.showDirectoryPicker();
+
+    for (let i = 0; i < 1000; i++) {
+      const index = i + 1;
+      const fileName = `${index.toString().padStart(4, "0")}.png`;
+
+      await draw({ animate: false });
+
+      const file = await directoryHandle.getFileHandle(fileName, {
+        create: true,
+      });
+      const writable = await file.createWritable();
+      console.log(fileName, writable);
+
+      const canvas = document.querySelector("canvas");
+      const blob = await new Promise((resolve, reject) => {
+        canvas.toBlob((blob) => resolve(blob), "image/png");
+      });
+      await writable.write(blob);
+      await writable.close();
+    }
+
+    console.log("export done");
   } else if (["<", "?"].includes(event.key)) {
     alert(
       `Hey! Julien Pradet speaking. Nice to meet you! You can find me at https://twitter.com/JulienPradet".
