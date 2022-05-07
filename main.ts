@@ -26,16 +26,16 @@ const height = (width / 21) * 29.7;
 const frames = 100;
 
 const firstPaletteColors = {
-  darkBlue: Color(214 / 360, 0.52, 0.5),
-  greyBlue: Color(180 / 360, 0.1, 0.65),
-  red: Color(5 / 360, 0.6, 0.93),
-  yellow: Color(40 / 360, 0.66, 1),
-  beige: Color(37 / 360, 0.18, 0.99), // this one must be last for psychedelic
+  darkBlue: Color(214 / 360, 0.56, 0.5),
+  greyBlue: Color(178 / 360, 0.15, 0.65),
+  red: Color(5 / 360, 0.6, 0.92),
+  yellow: Color(41 / 360, 0.64, 1),
+  beige: Color(37 / 360, 0.17, 0.99), // this one must be last for psychedelic
 };
 const palette = Object.values(firstPaletteColors);
 
 const white = Color(0, 0, 0.99);
-const black = Color(0, 0, 0.2);
+const black = Color(0, 0, 0.26);
 let blackAndWhitePalette = [white, black];
 
 let timeToDraw = 5000;
@@ -66,7 +66,7 @@ async function draw({
 
       // Elements variables
       let numberOfElements = Math.ceil(
-        mapRange(random.value(), 0, 1, 420, 850)
+        mapRange(random.value(), 0, 1, 400, 750)
       );
       if (mode === "rowdy") {
         numberOfElements = Math.ceil(numberOfElements / 2);
@@ -77,7 +77,7 @@ async function draw({
       let initialWidth =
         mode === "tiny"
           ? mapRange(random.value(), 0, 1, width / 150, width / 200)
-          : mapRange(random.value(), 0, 1, width / 60, width / 30);
+          : mapRange(random.value(), 0, 1, width / 43, width / 30);
 
       let length = clamp(
         initialWidth * (mode === "rowdy" ? 3 : 1),
@@ -88,6 +88,8 @@ async function draw({
         placeElementCircle,
         placeElementCircle,
         placeElementCircle,
+        placeElementCircle,
+        placeElementWave,
         placeElementWave,
         placeElementRandom,
         //   placeElementGrid,
@@ -112,7 +114,8 @@ async function draw({
       );
 
       if (directionFunction === directionRandom && length > initialWidth * 6) {
-        length /= 3;
+        initialWidth *= 2.5;
+        length /= 1.5;
       }
 
       let latestComputedDirectionPosition = null;
@@ -262,8 +265,8 @@ async function draw({
           getBackgroundColor: () => mainColor,
           getProgressBarColor: () => mainSecondColor,
           getMainColor: () => mainColor,
-          getSecondColor: (mainColor: CanvasJpColorHsv) =>
-            random.pick(secondColors),
+          getSecondColor: (mainColor: CanvasJpColorHsv, progress) =>
+            progress < 0.8 ? random.pick(secondColors) : mainSecondColor,
           getGlitchColor: () => dualGlitchColor,
         };
       }
@@ -413,7 +416,6 @@ async function draw({
       if (transformElement === symetry) {
         numberOfElements /= 4;
       } else if (transformElement === stripe) {
-        console.log(length, width / 10);
         if (length < width / 10 || length < initialWidth * 8) {
           length = clamp(
             initialWidth * 12,
@@ -519,7 +521,7 @@ async function draw({
           : colorPicker.getMainColor();
         const startColor = isEraser
           ? backgroundColor
-          : colorPicker.getSecondColor(endColor);
+          : colorPicker.getSecondColor(endColor, indexProgress);
         const opacityBreakpoint = random.gaussian(0.6, 0.05);
         const opacityOffset = random.value() * 10000;
 
@@ -711,12 +713,13 @@ async function draw({
       function placeElementCircle(index: number) {
         const centerIndex = Math.floor(random.value() * allCenters.length);
         const usedCenter = allCenters[centerIndex];
-        const maxDistance = allDistances[centerIndex];
+        const maxDistanceForCurrentCenter = allDistances[centerIndex];
 
         const inSphere =
           random.value() > inSphereThreshold / (usedCenter === center ? 1 : 2);
 
-        const sphereRadius = Math.min(width * 0.65, maxDistance) - margin;
+        const sphereRadius =
+          Math.min(width * 0.65, maxDistanceForCurrentCenter) - margin;
         const circleRadius = sphereRadius + margin * 3;
         const circleAngle = mapRange(random.value(), 0, 1, 0, Math.PI * 2);
         const circleDistance = mapRange(
@@ -748,11 +751,13 @@ async function draw({
           }
         }
 
-        const progress = inSphere
+        let progress = inSphere
           ? maxDistanceFromCenters / sphereRadius
           : 1 -
             (maxDistanceFromCenters - sphereRadius) /
               (circleRadius - sphereRadius);
+
+        progress = progress * (maxDistanceForCurrentCenter / maxDistance);
 
         return {
           progress: clamp(
@@ -774,7 +779,7 @@ async function draw({
       }
 
       let waveDirection = (progress) => Math.pow(progress, 0.8);
-      const waveMargin = 0;
+      const waveMargin = width / 6;
       function placeElementWave(index: number) {
         const elementCenter = Point(
           random.value() * (width - waveMargin * 2) + waveMargin,
@@ -794,8 +799,8 @@ async function draw({
 
       function placeElementRandom() {
         const elementCenter = Point(
-          random.value() * width,
-          random.value() * height
+          random.value() * (width - waveMargin * 2) + waveMargin,
+          random.value() * (height - waveMargin * 2) + waveMargin
         );
 
         const baseProgress = clamp(
@@ -808,8 +813,8 @@ async function draw({
             ),
             -0.7,
             0.7,
-            0.1,
-            0.8
+            0.2,
+            1
           ) + random.gaussian(0, 0.1)
         );
 
@@ -1139,7 +1144,7 @@ async function draw({
         //   ),
       };
 
-      const grid = [];
+      let grid = [];
 
       // Draw many elements. Position them on a sphere randomly. Once projected on a
       // 2D plan, it makes the center less dense than the outside
@@ -1160,7 +1165,9 @@ async function draw({
         );
 
         grid.push({
-          element: transformElement(element),
+          element: transformElement(
+            element.filter((shape) => isVisible(shape.center))
+          ),
           position: distanceFromCenter,
         });
       }
@@ -1170,7 +1177,14 @@ async function draw({
         grid.sort((a, b) => a.position - b.position);
       }
 
-      function isBlocked(position) {}
+      function isVisible(position) {
+        return (
+          position.x > waveMargin &&
+          position.x < width - waveMargin &&
+          position.y > waveMargin &&
+          position.y < height - waveMargin
+        );
+      }
 
       //   let elementsToRender = [];
       //   for (let { element } of grid) {
