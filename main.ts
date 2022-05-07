@@ -180,7 +180,7 @@ async function draw({
         0,
         1,
         0.8,
-        mode === "rowdy" ? 4 : 12
+        mode === "rowdy" || circleDeformationStrength > 1 ? 4 : 12
       );
       if (gradientPrecision > 7) {
         length *= 1.5;
@@ -233,6 +233,10 @@ async function draw({
           mixer: oppositeMix,
           mainColor: firstPaletteColors.yellow,
           excludedChoices: [firstPaletteColors.greyBlue],
+        },
+        {
+          mainColor: firstPaletteColors.yellow,
+          excludedChoices: [firstPaletteColors.beige],
         },
         {
           mixer: oppositeMix,
@@ -849,6 +853,13 @@ async function draw({
         ...corners.map((corner) => distance(corner, center))
       );
 
+      const spacingRigidity = mapRange(
+        Math.pow(random.value(), 2),
+        0,
+        1,
+        0.25,
+        0
+      );
       function placeElementGrid(index: number) {
         const numberOfElementsPerRow = Math.round(Math.sqrt(numberOfElements));
         const gridSpacingColumns = width / numberOfElementsPerRow;
@@ -870,10 +881,10 @@ async function draw({
         const elementCenter = Point(
           x * gridSpacingColumns -
             (flatDirectionOffset * Math.cos(flatDirection)) / 2 +
-            random.gaussian(0, gridSpacingColumns / 8),
+            random.gaussian(0, gridSpacingColumns * spacingRigidity),
           y * gridSpacingRows -
             (flatDirectionOffset * Math.sin(flatDirection)) / 2 +
-            random.gaussian(0, gridSpacingColumns / 8)
+            random.gaussian(0, gridSpacingColumns * spacingRigidity)
         );
 
         return {
