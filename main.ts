@@ -3,6 +3,7 @@ import { angle } from "canvas-jp/angle";
 import { CanvasJpArc, Circle } from "canvas-jp/Circle";
 import { CanvasJpColorHsv, Color, Gradient, red } from "canvas-jp/Color";
 import { distance } from "canvas-jp/distance";
+import { CanvasJpFill } from "canvas-jp/draw";
 import {
   inBounce,
   inCirc,
@@ -15,8 +16,8 @@ import {
 } from "canvas-jp/ease";
 import { Line } from "canvas-jp/Line";
 import { CanvasJpPoint, Point } from "canvas-jp/Point";
-import { PolygonFromRect } from "canvas-jp/Polygon";
-import { CanvasJpShape } from "canvas-jp/Shape";
+import { Polygon, PolygonFromRect } from "canvas-jp/Polygon";
+import { CanvasJpShape, Shape, SmoothShape } from "canvas-jp/Shape";
 import { rotate, translate, translateVector } from "canvas-jp/transform";
 import { mapRange, clamp } from "canvas-sketch-util/math";
 
@@ -24,13 +25,14 @@ const width = 1200;
 const height = (width / 21) * 29.7;
 const frames = 100;
 
-const palette = [
-  Color(214 / 360, 0.52, 0.5),
-  Color(180 / 360, 0.1, 0.65),
-  Color(5 / 360, 0.6, 0.93),
-  Color(40 / 360, 0.66, 1),
-  Color(37 / 360, 0.18, 0.99), // this one must be last for psychedelic
-];
+const firstPaletteColors = {
+  darkBlue: Color(214 / 360, 0.52, 0.5),
+  greyBlue: Color(180 / 360, 0.1, 0.65),
+  red: Color(5 / 360, 0.6, 0.93),
+  yellow: Color(40 / 360, 0.66, 1),
+  beige: Color(37 / 360, 0.18, 0.99), // this one must be last for psychedelic
+};
+const palette = Object.values(firstPaletteColors);
 
 const white = Color(0, 0, 0.99);
 const black = Color(0, 0, 0.2);
@@ -45,6 +47,7 @@ async function draw({
   forceSeed,
   animate = true,
 }: { forceSeed?: number; animate?: boolean } = {}) {
+  const start = performance.now();
   document.querySelector("#container").innerHTML = "";
 
   await canvasJp(
@@ -58,9 +61,7 @@ async function draw({
       const margin = width / 10;
 
       const mode = random.pick(
-        new Array(80)
-          .fill("normal")
-          .concat(["tiny", "rowdy", "rowdy", "rowdy", "rowdy"])
+        new Array(80).fill("normal").concat(["tiny", "rowdy", "rowdy", "rowdy"])
       );
 
       // Elements variables
@@ -79,13 +80,16 @@ async function draw({
           : mapRange(random.value(), 0, 1, width / 60, width / 30);
 
       let length = clamp(
-        initialWidth,
+        initialWidth * (mode === "rowdy" ? 3 : 1),
         initialWidth * 30,
-        random.gaussian(initialWidth * 12, initialWidth * 5)
+        random.gaussian(initialWidth * 16, initialWidth * 5)
       );
       const placement = random.pick([
         placeElementCircle,
+        placeElementCircle,
+        placeElementCircle,
         placeElementWave,
+        placeElementRandom,
         //   placeElementGrid,
       ]);
 
@@ -96,12 +100,12 @@ async function draw({
       const directionFunction = random.pick(
         []
           .concat(
-            new Array(shouldUseFlatDirection ? 10 : 20).fill(
+            new Array(shouldUseFlatDirection ? 25 : 50).fill(
               directionConcentric
             )
           )
           .concat(
-            shouldUseFlatDirection ? new Array(10).fill(directionFlat) : null
+            shouldUseFlatDirection ? new Array(25).fill(directionFlat) : null
           )
           .concat(directionRandom)
           .filter(Boolean)
@@ -138,14 +142,25 @@ async function draw({
         0,
         1,
         0.8,
-        12
+        mode === "rowdy" ? 4 : 12
       );
+      if (gradientPrecision > 7) {
+        length *= 1.5;
+      }
+
       const gradientRoughness = mapRange(
         Math.pow(random.value(), 3),
         0,
         1,
         0,
         0.17
+      );
+
+      const colorMixer = random.pick(
+        []
+          .concat(new Array(250).fill(Color.mix))
+          .concat(new Array(250).fill(oppositeMix))
+          .concat(randomMix)
       );
 
       function blackAndWhite() {
@@ -161,14 +176,54 @@ async function draw({
         };
       }
 
+      const excludedPalettes = [
+        {
+          mixer: oppositeMix,
+          mainColor: firstPaletteColors.red,
+          excludedChoices: [
+            firstPaletteColors.greyBlue,
+            firstPaletteColors.darkBlue,
+          ],
+        },
+        {
+          mixer: oppositeMix,
+          mainColor: firstPaletteColors.yellow,
+          excludedChoices: [firstPaletteColors.greyBlue],
+        },
+        {
+          mixer: oppositeMix,
+          mainColor: firstPaletteColors.greyBlue,
+          excludedChoices: [
+            firstPaletteColors.red,
+            firstPaletteColors.yellow,
+            firstPaletteColors.beige,
+          ],
+        },
+        {
+          mixer: Color.mix,
+          mainColor: firstPaletteColors.greyBlue,
+          excludedChoices: [firstPaletteColors.red],
+        },
+      ].filter(({ mixer }) => !mixer || colorMixer === mixer);
+
+      function getRemainingPalette(mainColor) {
+        const excludedColors =
+          excludedPalettes.find((item) => item.mainColor === mainColor)
+            ?.excludedChoices || [];
+        console.log(mainColor, excludedColors, excludedPalettes);
+        return palette
+          .filter((color) => excludedColors.every((item) => item !== color))
+          .filter((color) => color !== mainColor);
+      }
+
       function monochrome() {
         const mainColor = random.pick(palette);
-        const secondColor = random.pick(
-          palette.filter((color) => color !== mainColor)
-        );
+        const remainingColors = getRemainingPalette(mainColor);
+        const secondColor = random.pick(remainingColors);
         return {
           name: "monochrome",
           getBackgroundColor: () => mainColor,
+          getBackgroundShade: () => secondColor,
           getMainColor: () => mainColor,
           getSecondColor: (mainColor: CanvasJpColorHsv) => secondColor,
         };
@@ -176,7 +231,7 @@ async function draw({
 
       function dual() {
         const mainColor = random.pick(palette);
-        const remainingColors = palette.filter((color) => color !== mainColor);
+        const remainingColors = getRemainingPalette(mainColor);
         const mainSecondColor = random.pick(remainingColors);
         const amountOfMainSecondColor = Math.round(random.gaussian(6, 1.5));
 
@@ -193,8 +248,7 @@ async function draw({
         );
 
         const secondColors = new Array(amountOfMainSecondColor)
-          .fill(null)
-          .map(() => mainSecondColor)
+          .fill(mainSecondColor)
           .concat([
             amountOfMainSecondColor > 7 && random.value() > 0.05
               ? random.pick(
@@ -249,13 +303,6 @@ async function draw({
 
       const hasReversedColorDirection = random.value() > 0.8;
       const colorLinearity = mapRange(random.value(), 0, 1, 0.4, 1);
-
-      const colorMixer = random.pick(
-        []
-          .concat(new Array(250).fill(Color.mix))
-          .concat(new Array(250).fill(oppositeMix))
-          .concat(randomMix)
-      );
 
       function oppositeMix(
         colorA: CanvasJpColorHsv,
@@ -334,13 +381,28 @@ async function draw({
         new Array(25)
           .fill(identity)
           .concat(
+            new Array(15).fill(
+              sinusoidalDeformationStrength < 0.05 &&
+                gradientPrecision < 1.5 &&
+                gradientRoughness < 0.04
+                ? tranformShape
+                : null
+            )
+          )
+          .concat(
             new Array(3)
               .fill([
-                random.value() < 0.2 && circleDeformationStrength < 2
+                random.value() < 0.2 &&
+                circleDeformationStrength < 2 &&
+                placement !== placeElementRandom
                   ? symetry
                   : null,
                 line,
-                sinusoidalDeformationStrength < 0.7 ? stripe : null,
+                sinusoidalDeformationStrength < 0.05 &&
+                mode !== "rowdy" &&
+                gradientPrecision < 1.5
+                  ? stripe
+                  : null,
               ])
               .flat()
           )
@@ -351,11 +413,12 @@ async function draw({
       if (transformElement === symetry) {
         numberOfElements /= 4;
       } else if (transformElement === stripe) {
-        if (length < width / 20) {
+        console.log(length, width / 10);
+        if (length < width / 10 || length < initialWidth * 8) {
           length = clamp(
-            initialWidth * 8,
+            initialWidth * 12,
             initialWidth * 30,
-            random.gaussian(initialWidth * 12, initialWidth * 5)
+            random.gaussian(initialWidth * 16, initialWidth * 5)
           );
         }
       }
@@ -710,11 +773,8 @@ async function draw({
         };
       }
 
-      let waveDirection = random.pick([
-        (progress) => Math.pow(progress, 0.8),
-        (progress) => Math.pow(1 - progress, 2),
-      ]);
-      const waveMargin = random.pick([margin, 0]);
+      let waveDirection = (progress) => Math.pow(progress, 0.8);
+      const waveMargin = 0;
       function placeElementWave(index: number) {
         const elementCenter = Point(
           random.value() * (width - waveMargin * 2) + waveMargin,
@@ -728,6 +788,35 @@ async function draw({
           distanceFromCenter: waveDirection(
             clamp(0, 1, random.gaussian(distanceFromCenter, 0.2))
           ),
+          usedCenter: center,
+        };
+      }
+
+      function placeElementRandom() {
+        const elementCenter = Point(
+          random.value() * width,
+          random.value() * height
+        );
+
+        const baseProgress = clamp(
+          0,
+          1,
+          mapRange(
+            random.noise2D(
+              (elementCenter.x / width) * 4,
+              (elementCenter.y / width) * 4
+            ),
+            -0.7,
+            0.7,
+            0.1,
+            0.8
+          ) + random.gaussian(0, 0.1)
+        );
+
+        return {
+          progress: clamp(0, 1, random.gaussian(baseProgress, 0.1)),
+          elementCenter,
+          distanceFromCenter: clamp(0, 1, random.gaussian(0.5, 0.1)),
           usedCenter: center,
         };
       }
@@ -812,7 +901,7 @@ async function draw({
 
               return Line(prevElement.center, element.center, {
                 color: element.fill.color,
-                opacity: 1,
+                opacity: element.fill.opacity,
                 width: element.radius * 0.3 * progress,
                 style: CanvasJpStrokeStyle.round,
               });
@@ -823,47 +912,47 @@ async function draw({
 
       const useOnlyBaseRotation = random.value() < 0.2;
       const rotationOffset =
-        random.value() * (useOnlyBaseRotation ? Math.PI : Math.PI * 0.4);
+        random.value() * (useOnlyBaseRotation ? Math.PI : Math.PI * 0.22);
       const lengthFactor = useOnlyBaseRotation
         ? 1
         : clamp(0, 5, 1 / Math.cos(rotationOffset));
-      const baseSpacing = random.gaussian(width / 150, width / 200);
       function stripe(elements: CanvasJpArc[]): CanvasJpDrawable[] {
         let prevElement = elements[0];
         return [].concat(
           elements
             .map((element, index) => {
-              if (
-                distance(prevElement.center, element.center) <
-                baseSpacing + random.gaussian(0, width / 200)
-              ) {
-                return;
+              const progress = index / elements.length;
+              let elementAngle = angle(prevElement.center, element.center);
+              let tangent = 0;
+              if (!useOnlyBaseRotation) {
+                tangent = elementAngle + Math.PI / 2;
               }
-
-              const tangent =
-                (useOnlyBaseRotation
-                  ? 0
-                  : angle(prevElement.center, element.center) + Math.PI / 2) +
-                random.gaussian(0, 0.05);
+              tangent += random.gaussian(0, 0.05);
 
               prevElement = element;
 
+              let basePosition = translateVector(
+                random.gaussian(0, (width / 300) * progress),
+                elementAngle,
+                element.center
+              );
+
               const start = rotate(
-                element.center,
+                basePosition,
                 rotationOffset,
                 translateVector(
                   element.radius * lengthFactor,
                   tangent,
-                  element.center
+                  basePosition
                 )
               );
               const end = rotate(
-                element.center,
+                basePosition,
                 rotationOffset,
                 translateVector(
                   -element.radius * lengthFactor,
                   tangent,
-                  element.center
+                  basePosition
                 )
               );
 
@@ -875,7 +964,7 @@ async function draw({
               });
             })
             .filter(Boolean)
-            .slice(0, -1)
+            .slice(1, -1)
         );
       }
 
@@ -895,11 +984,41 @@ async function draw({
         );
       }
 
-      const shadeOffset = translateVector(
-        mapRange(random.value(), 0, 1, width / 200, width / 150),
-        random.value() * Math.PI * 2,
-        Point(0, 0)
+      const hasNoisyPhase = random.value() > 0.9;
+      const minimumEdge = hasNoisyPhase ? 5 : 3;
+
+      const numberOfEdges = clamp(
+        minimumEdge,
+        Number.MAX_SAFE_INTEGER,
+        Math.ceil(random.gaussian(minimumEdge, 2))
       );
+      const angleBackward = random.value() > 0.5;
+      function tranformShape(elements: CanvasJpArc[]) {
+        let previousElement = elements[0];
+        const result = elements
+          .map((element) => {
+            const phase =
+              angle(element.center, previousElement.center) +
+              (hasNoisyPhase ? random.gaussian(Math.PI, 0.3) : 0);
+            previousElement = element;
+            return SmoothShape(
+              new Array(numberOfEdges).fill(null).map((_, index) => {
+                const progress = index / numberOfEdges;
+                const pointAngle = progress * Math.PI * 2 + phase;
+                return translateVector(
+                  element.radius,
+                  pointAngle,
+                  element.center
+                );
+              }),
+              0.15,
+              element.fill
+            );
+          })
+          .slice(1);
+
+        return angleBackward ? result.reverse() : result;
+      }
 
       console.log("===========");
       console.table({
@@ -1051,6 +1170,8 @@ async function draw({
         grid.sort((a, b) => a.position - b.position);
       }
 
+      function isBlocked(position) {}
+
       //   let elementsToRender = [];
       //   for (let { element } of grid) {
       //     elementsToRender.push(element);
@@ -1066,32 +1187,52 @@ async function draw({
       //   }
 
       if (animate) {
-        const numberOfElementsToDrawApproximation = grid
+        const totalNumberOfShapesToDraw = grid
           .map(({ element }) => element.length)
           .reduce((acc, length) => acc + length, 0);
 
         let numberOfRenderedElements = 0;
+        let numberOfElementsToRenderBeforeFade = grid.length / 35;
+        let numberOfFadeRendered = 0;
         let elementsToRender = [];
-        for (let { element } of grid) {
-          for (let item of element) {
-            elementsToRender.push(item);
-            numberOfRenderedElements++;
 
-            const numberOfElementsPerFrame =
-              (numberOfElementsToDrawApproximation / getTimeToDraw()) * 16.6;
-            if (elementsToRender.length > numberOfElementsPerFrame) {
-              yield {
-                background: null,
-                elements: elementsToRender.concat(
+        for (let { element } of grid) {
+          elementsToRender = elementsToRender.concat(element);
+          numberOfRenderedElements += element.length;
+
+          const numberOfElementsPerFrame =
+            (totalNumberOfShapesToDraw / getTimeToDraw()) * 16.6;
+          if (elementsToRender.length > numberOfElementsPerFrame) {
+            let shouldFade =
+              numberOfRenderedElements < grid.length / 4 &&
+              numberOfRenderedElements >
+                numberOfElementsToRenderBeforeFade * (numberOfFadeRendered + 1);
+
+            let fade = shouldFade
+              ? [
+                  Shape(background.points, {
+                    color: backgroundColor,
+                    opacity: 0.085,
+                  }),
+                ]
+              : [];
+            if (shouldFade) {
+              console.log("fade");
+              numberOfFadeRendered++;
+            }
+
+            yield {
+              background: null,
+              elements: []
+                .concat(fade)
+                .concat(elementsToRender)
+                .concat(
                   progressBar(
-                    1 -
-                      numberOfRenderedElements /
-                        numberOfElementsToDrawApproximation
+                    1 - numberOfRenderedElements / totalNumberOfShapesToDraw
                   )
                 ),
-              };
-              elementsToRender = [];
-            }
+            };
+            elementsToRender = [];
           }
         }
 
@@ -1128,7 +1269,7 @@ async function draw({
     const context = document.querySelector("canvas").getContext("2d");
     const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
     for (let i = 0; i < imageData.data.length; i += 4) {
-      let grainAmount = (Math.random() - 0.5) * 15;
+      let grainAmount = (Math.random() - 0.5) * 25;
       imageData.data[i] = imageData.data[i] + grainAmount;
       imageData.data[i + 1] = imageData.data[i + 1] + grainAmount;
       imageData.data[i + 2] = imageData.data[i + 2] + grainAmount;
@@ -1138,6 +1279,7 @@ async function draw({
     context.putImageData(imageData, 0, 0, 0, 0, canvas.width, canvas.height);
   }
   //   granulate();
+  console.log(performance.now() - start);
 }
 
 draw({
