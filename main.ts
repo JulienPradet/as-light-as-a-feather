@@ -1,29 +1,24 @@
 import { canvasJp, CanvasJpDrawable, CanvasJpStrokeStyle } from "canvas-jp";
 import { angle } from "canvas-jp/angle";
 import { CanvasJpArc, Circle } from "canvas-jp/Circle";
-import { CanvasJpColorHsv, Color, Gradient, red } from "canvas-jp/Color";
+import { Clip } from "canvas-jp/Clip";
+import { hsvToRgb } from "canvas-jp/Color";
+import { CanvasJpColorHsv, Color } from "canvas-jp/Color";
 import { distance } from "canvas-jp/distance";
-import { CanvasJpFill } from "canvas-jp/draw";
-import {
-  inBounce,
-  inCirc,
-  inCube,
-  inOutBounce,
-  inOutSine,
-  inQuart,
-  inSine,
-  outSine,
-} from "canvas-jp/ease";
-import { Line } from "canvas-jp/Line";
+import { inOutSine, inSine, outSine } from "canvas-jp/ease";
+import { Line, SmoothLine } from "canvas-jp/Line";
+import { Overlay } from "canvas-jp/Overlay";
 import { CanvasJpPoint, Point } from "canvas-jp/Point";
 import { Polygon, PolygonFromRect } from "canvas-jp/Polygon";
 import { CanvasJpShape, Shape, SmoothShape } from "canvas-jp/Shape";
-import { rotate, translate, translateVector } from "canvas-jp/transform";
+import { translate } from "canvas-jp/transform";
+import { rotate, translateVector } from "canvas-jp/transform";
+import { UpdateImageData } from "canvas-jp/UpdateImageData";
 import { mapRange, clamp } from "canvas-sketch-util/math";
 
 const width = 1200;
 const height = (width / 21) * 29.7;
-const frames = 100;
+const resolution = clamp(1, 1.5, window.devicePixelRatio || 1);
 
 const firstPaletteColors = {
   darkBlue: Color(214 / 360, 0.56, 0.5),
@@ -32,13 +27,22 @@ const firstPaletteColors = {
   yellow: Color(41 / 360, 0.64, 1),
   beige: Color(37 / 360, 0.17, 0.99), // this one must be last for psychedelic
 };
-const palette = Object.values(firstPaletteColors);
 
+// red => blueGrey
+const secondPaletteColors = {
+  blueGrey: Color(197 / 360, 0.69, 0.73),
+  bluePale: Color(180 / 360, 0.07, 0.98),
+  purple: Color(220 / 360, 0.63, 0.54),
+  red: Color(352 / 360, 0.63, 0.89),
+  pink: Color(354 / 360, 0.22, 0.97),
+};
 const white = Color(0, 0, 0.99);
-const black = Color(0, 0, 0.26);
+const black = Color(0, 0, 0.23);
 let blackAndWhitePalette = [white, black];
 
-let timeToDraw = 5000;
+let defaultTimeToDraw = 4000;
+let timeToDraw = defaultTimeToDraw;
+let timeAuto = true;
 function getTimeToDraw() {
   return timeToDraw;
 }
@@ -59,10 +63,22 @@ async function draw({
       const seed = random.getSeed();
       window.location.hash = seed.toString();
       const margin = width / 10;
+      const waveMargin = width / 12;
 
-      const mode = random.pick(
-        new Array(80).fill("normal").concat(["tiny", "rowdy", "rowdy", "rowdy"])
-      );
+      const psychedelicPalette = new Array(10).fill(null).map((_, index) => {
+        return Color(
+          index / 10 + random.gaussian(0, 0.07),
+          clamp(0, 1, random.gaussian(0.5, 0.2)),
+          clamp(0.1, 1, random.gaussian(0.7, 0.35))
+        );
+      });
+
+      const palette = random.pick([
+        // psychedelicPalette,
+        Object.values(firstPaletteColors),
+      ]);
+
+      const mode = random.pick(new Array(80).fill("normal").concat(["tiny"]));
 
       // Elements variables
       let numberOfElements = Math.ceil(
@@ -109,7 +125,7 @@ async function draw({
             )
           )
           .concat(
-            shouldUseFlatDirection ? new Array(25).fill(directionFlat) : null
+            shouldUseFlatDirection ? new Array(15).fill(directionFlat) : null
           )
           .concat(directionRandom)
           .filter(Boolean)
@@ -180,7 +196,11 @@ async function draw({
         0,
         1,
         0.8,
-        mode === "rowdy" || circleDeformationStrength > 1 ? 4 : 12
+        mode === "rowdy" || circleDeformationStrength > 1
+          ? 4
+          : sinusoidalDeformationStrength > 0
+          ? 1
+          : 12
       );
       if (gradientPrecision > 7) {
         length *= 1.5;
@@ -196,19 +216,31 @@ async function draw({
 
       const colorMixer = random.pick(
         []
-          .concat(new Array(100).fill(Color.mix))
-          .concat(new Array(100).fill(oppositeMix))
+          .concat(new Array(10).fill(Color.mix))
+          .concat(new Array(10).fill(oppositeMix))
           .concat(
-            gradientPrecision < 1.5 &&
+            gradientPrecision < 1 &&
               circleDeformationStrength < 1.5 &&
-              mode !== "rowdy"
+              sinusoidalDeformationStrength === 0 &&
+              mode !== "rowdy" &&
+              directionFunction !== directionRandom
               ? [randomMix]
               : []
           )
       );
 
+      function filterMainColor(palette: CanvasJpColorHsv[]) {
+        if (palette === psychedelicPalette) {
+          return palette
+            .sort((colorA, colorB) => colorA.v - colorB.v)
+            .slice(0, 1);
+        } else {
+          return palette;
+        }
+      }
+
       function blackAndWhite() {
-        const mainColor = random.pick(blackAndWhitePalette);
+        const mainColor = random.pick(filterMainColor(blackAndWhitePalette));
         const secondColor = random.pick(
           blackAndWhitePalette.filter((color) => color !== mainColor)
         );
@@ -252,9 +284,57 @@ async function draw({
           mainColor: firstPaletteColors.greyBlue,
           excludedChoices: [firstPaletteColors.red],
         },
+        {
+          mixer: Color.mix,
+          mainColor: firstPaletteColors.red,
+          excludedChoices: [
+            firstPaletteColors.greyBlue,
+            firstPaletteColors.yellow,
+            firstPaletteColors.darkBlue,
+          ],
+        },
+        // {
+        //   mixer: oppositeMix,
+        //   mainColor: secondPaletteColors.blueGrey,
+        //   excludedChoices: [secondPaletteColors.red],
+        // },
+        // {
+        //   mixer: Color.mix,
+        //   mainColor: secondPaletteColors.bluePale,
+        //   excludedChoices: [secondPaletteColors.pink],
+        // },
+        // {
+        //   mainColor: secondPaletteColors.pink,
+        //   excludedChoices: [secondPaletteColors.bluePale],
+        // },
+        // {
+        //   mixer: oppositeMix,
+        //   mainColor: secondPaletteColors.bluePale,
+        //   excludedChoices: [secondPaletteColors.pink, secondPaletteColors.red],
+        // },
+        // {
+        //   mixer: Color.mix,
+        //   mainColor: secondPaletteColors.red,
+        //   excludedChoices: [
+        //     secondPaletteColors.blueGrey,
+        //     secondPaletteColors.purple,
+        //   ],
+        // },
+        // {
+        //   mixer: oppositeMix,
+        //   mainColor: secondPaletteColors.red,
+        //   excludedChoices: Object.values(secondPaletteColors),
+        // },
+        // {
+        //   mainColor: secondPaletteColors.purple,
+        //   excludedChoices: [
+        //     secondPaletteColors.red,
+        //     secondPaletteColors.blueGrey,
+        //   ],
+        // },
       ].filter(({ mixer }) => !mixer || colorMixer === mixer);
 
-      function getRemainingPalette(mainColor) {
+      function getRemainingPalette(mainColor: CanvasJpColorHsv) {
         const excludedColors =
           excludedPalettes.find((item) => item.mainColor === mainColor)
             ?.excludedChoices || [];
@@ -264,7 +344,11 @@ async function draw({
       }
 
       function monochrome() {
-        const mainColor = random.pick(palette);
+        const mainColor = random.pick(
+          filterMainColor(palette).filter(
+            (color) => getRemainingPalette(color).length > 0
+          )
+        );
         const remainingColors = getRemainingPalette(mainColor);
         const secondColor = random.pick(remainingColors);
         return {
@@ -277,7 +361,11 @@ async function draw({
       }
 
       function dual() {
-        const mainColor = random.pick(palette);
+        const mainColor = random.pick(
+          filterMainColor(palette).filter(
+            (color) => getRemainingPalette(color).length > 0
+          )
+        );
         const remainingColors = getRemainingPalette(mainColor);
         const mainSecondColor = random.pick(remainingColors);
         const amountOfMainSecondColor = Math.round(random.gaussian(6, 1.5));
@@ -316,7 +404,20 @@ async function draw({
       }
 
       function multicolor() {
-        const mainColor = random.pick(palette);
+        const mainColor = random.pick(filterMainColor(palette));
+        return {
+          name: "multicolor",
+          getBackgroundColor: () => mainColor,
+          getMainColor: () => mainColor,
+          getSecondColor: (mainColor: CanvasJpColorHsv) =>
+            random.pick(palette.filter((color) => color !== mainColor)),
+        };
+      }
+
+      const darkBackground = Color(270 / 360, 0.53, 0.1);
+
+      function multicolorDarkBackground() {
+        const mainColor = darkBackground;
         return {
           name: "multicolor",
           getBackgroundColor: () => mainColor,
@@ -336,16 +437,29 @@ async function draw({
         };
       }
 
+      function psychedelicDark() {
+        return {
+          name: "psychedelic",
+          getBackgroundColor: () => darkBackground,
+          getMainColor: () => random.pick(palette),
+          getSecondColor: (mainColor: CanvasJpColorHsv) =>
+            random.pick(palette.filter((color) => color !== mainColor)),
+        };
+      }
+
       const colorPickerFactory =
         colorMixer === randomMix
           ? psychedelic
           : random.pick(
               []
                 .concat(blackAndWhite)
-                .concat(new Array(3).fill(monochrome))
-                .concat(new Array(4).fill(dual))
-                .concat(new Array(12).fill(multicolor))
+                // .concat(new Array(4).fill(monochrome))
+                .concat(new Array(6).fill(dual))
+                .concat(new Array(16).fill(multicolor))
+                .concat(new Array(1).fill(multicolorDarkBackground))
                 .concat(psychedelic)
+                .concat(psychedelic)
+                .concat(psychedelicDark)
             );
       const colorPicker = colorPickerFactory();
       const backgroundColor = colorPicker.getBackgroundColor();
@@ -354,6 +468,12 @@ async function draw({
       const hasReversedColorDirection = random.value() > 0.8;
       const colorLinearity = mapRange(random.value(), 0, 1, 0.4, 1);
 
+      const isDarkBackground = [
+        psychedelicDark,
+        multicolorDarkBackground,
+      ].includes(colorPickerFactory);
+      console.log(colorPickerFactory.name);
+      const threshold = isDarkBackground ? 0.4 : 0.2;
       function oppositeMix(
         colorA: CanvasJpColorHsv,
         colorB: CanvasJpColorHsv,
@@ -361,9 +481,9 @@ async function draw({
       ) {
         let hueA = colorA.h;
         let hueB = colorB.h;
-        if (hueA - hueB > 0.2) {
+        if (hueA - hueB > threshold) {
           hueB += 1;
-        } else if (hueB - hueA > 0.2) {
+        } else if (hueB - hueA > threshold) {
           hueA += 1;
         }
         return Color(
@@ -414,11 +534,21 @@ async function draw({
                 placement !== placeElementRandom
                   ? symetry
                   : null,
+
                 line,
+
                 sinusoidalDeformationStrength < 0.05 &&
                 mode !== "rowdy" &&
-                gradientPrecision < 1.5
+                gradientPrecision < 1.5 &&
+                colorMixer !== randomMix
                   ? stripe
+                  : null,
+
+                circleDeformationStrength < 0.7 &&
+                length > initialWidth * 5 &&
+                sinusoidalDeformationStrength === 0 &&
+                !hasNoGradient
+                  ? transformClouds
                   : null,
               ])
               .flat()
@@ -439,15 +569,36 @@ async function draw({
         }
       }
 
+      const centerRandom = random.value();
       const center =
-        random.value() > 0.2
+        centerRandom > 0.3
           ? Point(
-              mapRange(random.value(), 0, 1, 0.2, 0.8) * width,
-              mapRange(random.value(), 0, 1, 0.2, 0.8) * height
+              mapRange(random.value(), 0, 1, 0.3, 0.7) * width,
+              mapRange(random.value(), 0, 1, 0.3, 0.7) * height
+            )
+          : centerRandom > 0.29
+          ? Point(
+              mapRange(random.value(), 0, 1, 0, waveMargin),
+              mapRange(random.value(), 0, 1, 0, height)
+            )
+          : centerRandom > 0.28
+          ? Point(
+              mapRange(random.value(), 0, 1, 0, width),
+              mapRange(random.value(), 0, 1, 0, waveMargin)
+            )
+          : centerRandom > 0.27
+          ? Point(
+              mapRange(random.value(), 0, 1, width - waveMargin, width),
+              mapRange(random.value(), 0, 1, 0, height)
+            )
+          : centerRandom > 0.26
+          ? Point(
+              mapRange(random.value(), 0, 1, 0, waveMargin),
+              mapRange(random.value(), 0, 1, height - waveMargin, height)
             )
           : Point(width / 2, height / 2);
 
-      const maxDistance =
+      let maxDistance =
         Math.max(
           distance(Point(0, 0), center),
           distance(Point(width, 0), center),
@@ -455,8 +606,15 @@ async function draw({
           distance(Point(0, height), center)
         ) * clamp(0.4, 2, random.gaussian(0.7, 0.4));
 
+      if (
+        (centerRandom < 0.3 && centerRandom > 0.26) ||
+        (centerRandom > 0.3 && random.value() > 0.5)
+      ) {
+        maxDistance *= 4;
+      }
+
       const alternativeCenters = new Array(
-        random.value() > 0.8
+        random.value() > 0.9
           ? Math.round(clamp(0, 3, Math.abs(random.gaussian(0, 2))))
           : 0
       )
@@ -500,6 +658,12 @@ async function draw({
         allDistances.length === mainCenterProbability
       ) {
         numberOfElements /= 2;
+      }
+
+      function darkenIfDarkBackground(color: CanvasJpColorHsv) {
+        return isDarkBackground
+          ? Color(color.h, color.s * 1.1, color.v * 0.93)
+          : color;
       }
 
       // One element is kind of one brush stroke. It starts big, grows smaller
@@ -657,7 +821,7 @@ async function draw({
               : 1;
 
           let color = hasNoGradient
-            ? startColor || colorPicker.getGlitchColor()
+            ? darkenIfDarkBackground(startColor || colorPicker.getGlitchColor())
             : startColor && endColor
             ? colorMixerAmplified(
                 startColor,
@@ -771,6 +935,18 @@ async function draw({
 
         progress = progress * (maxDistanceForCurrentCenter / maxDistance);
 
+        if (
+          directionFunction === directionFlat &&
+          distanceFromCenter > sphereRadius * 0.5
+        ) {
+          if (
+            random.value() >
+            Math.pow(distanceFromCenter / circleDistance, 0.5) * 0.8
+          ) {
+            return;
+          }
+        }
+
         return {
           progress: clamp(
             0,
@@ -791,7 +967,6 @@ async function draw({
       }
 
       let waveDirection = (progress) => Math.pow(progress, 0.8);
-      const waveMargin = width / 12;
       function placeElementWave(index: number) {
         const elementCenter = Point(
           random.value() * (width - waveMargin * 2) + waveMargin,
@@ -845,7 +1020,6 @@ async function draw({
         Point(waveMargin, height - waveMargin),
       ];
       const gridSpacingModifier = mapRange(random.value(), 0, 1, 1, 1.5);
-      console.log(gridSpacingModifier, circleDeformationStrength);
       if (placement === placeElementGrid && circleDeformationStrength < 1) {
         numberOfElements = numberOfElements * gridSpacingModifier;
       }
@@ -926,10 +1100,13 @@ async function draw({
       }
 
       function line(elements: CanvasJpArc[]): CanvasJpDrawable[] {
+        let prevElement = elements[0];
+        let prevTangent = 0;
+        const offset = random.gaussian(0, 0.08);
+
         return [].concat(elements).concat(
           elements
             .map((element, index) => {
-              const prevElement = elements[index > 0 ? index - 1 : 0];
               const progress =
                 index < elements.length * 0.2
                   ? inSine(mapRange(index, 0, elements.length * 0.2, 0, 1))
@@ -945,12 +1122,32 @@ async function draw({
                     )
                   : 1;
 
-              return Line(prevElement.center, element.center, {
-                color: element.fill.color,
-                opacity: element.fill.opacity,
-                width: element.radius * 0.3 * progress,
-                style: CanvasJpStrokeStyle.round,
-              });
+              const tangent =
+                angle(prevElement.center, element.center) + Math.PI / 2;
+
+              const line = Line(
+                translateVector(
+                  offset * prevElement.radius,
+                  prevTangent,
+                  prevElement.center
+                ),
+                translateVector(
+                  offset * element.radius,
+                  tangent,
+                  element.center
+                ),
+                {
+                  color: element.fill.color,
+                  opacity: element.fill.opacity,
+                  width: element.radius * 0.3 * progress,
+                  style: CanvasJpStrokeStyle.round,
+                }
+              );
+
+              prevElement = element;
+              prevTangent = tangent;
+
+              return line;
             })
             .slice(1, -1)
         );
@@ -1030,7 +1227,7 @@ async function draw({
         );
       }
 
-      const hasNoisyPhase = random.value() > 0.9;
+      const hasNoisyPhase = colorMixer !== randomMix && random.value() > 0.9;
       const minimumEdge = hasNoisyPhase ? 5 : 3;
 
       const numberOfEdges = clamp(
@@ -1066,6 +1263,126 @@ async function draw({
         return angleBackward ? result.reverse() : result;
       }
 
+      function transformClouds(elements: CanvasJpArc[]) {
+        if (random.value() > 0.3) {
+          return;
+        }
+        let streetTag = [];
+
+        let previousElement = elements[0];
+        for (let i = 1; i < elements.length; i++) {
+          const currentElement = elements[i];
+          let angleBetweenElements = angle(
+            previousElement.center,
+            currentElement.center
+          );
+          let distanceBetweenElements = distance(
+            currentElement.center,
+            previousElement.center
+          );
+
+          const numberOfCircles = Math.ceil(
+            distanceBetweenElements / gradientPrecision
+          );
+          const distanceBetweenCircles =
+            distanceBetweenElements / numberOfCircles;
+
+          streetTag = streetTag.concat(
+            new Array(numberOfCircles).fill(null).map((_, index) => {
+              const progress = index / numberOfCircles;
+              const positionOnMainLine = translateVector(
+                progress * distanceBetweenElements,
+                angleBetweenElements,
+                currentElement.center
+              );
+              const distanceFromMainLine = Math.pow(
+                clamp(-1, 1, random.gaussian(0, 0.35)),
+                2.2
+              );
+              return Circle(
+                translateVector(
+                  distanceFromMainLine *
+                    currentElement.radius *
+                    1.5 *
+                    (random.value() > 0.1 ? 1 : -0.5),
+                  angleBetweenElements + Math.PI / 2,
+                  positionOnMainLine
+                ),
+                currentElement.radius,
+                {
+                  ...currentElement.fill,
+                  opacity: currentElement.fill.opacity,
+                }
+              );
+            })
+          );
+
+          //   claws = claws.concat(
+          //     new Array(numberOfClaws)
+          //       .fill(null)
+          //       .map((_, clawIndex) => {
+          //         const clawProgress =
+          //           clawIndex / (numberOfClaws - 1) + clawOffset[clawIndex];
+
+          //         const distanceProgress = mapRange(clawProgress, 0, 1, -1, 1);
+
+          //         const d =
+          //           currentElement.radius *
+          //           Math.pow(
+          //             distanceProgress *
+          //               random.noise1D(
+          //                 Math.cos(i / 2 + clawOffset[clawIndex] * 20) + i / 10
+          //               ),
+          //             2.3
+          //           );
+
+          //         const d2 =
+          //           currentElement.radius *
+          //           Math.pow(
+          //             distanceProgress *
+          //               random.noise1D(
+          //                 Math.cos((i + 0.5) / 2 + clawOffset[clawIndex] * 20) +
+          //                   i / 10
+          //               ),
+          //             2.3
+          //           );
+
+          //         return [
+          //           Circle(
+          //             translateVector(d, tangent, currentElement.center),
+          //             currentElement.radius / 5,
+          //             {
+          //               ...currentElement.fill,
+          //               opacity:
+          //                 random.gaussian(0.3, 0.2) *
+          //                 (1 - d / currentElement.radius),
+          //             }
+          //           ),
+          //           Circle(
+          //             translateVector(
+          //               distanceBetweenElements * 0.5,
+          //               tangent - Math.PI / 2,
+          //               translateVector(d2, tangent, currentElement.center)
+          //             ),
+          //             currentElement.radius / 5,
+          //             {
+          //               ...currentElement.fill,
+          //               opacity:
+          //                 random.gaussian(0.3, 0.2) *
+          //                 (1 - d2 / currentElement.radius),
+          //             }
+          //           ),
+          //         ];
+          //       })
+          //       .flat()
+          //   );
+
+          previousElement = currentElement;
+        }
+
+        return streetTag;
+      }
+
       console.log("===========");
       console.table({
         Seed: random.getSeed(),
@@ -1097,7 +1414,7 @@ async function draw({
 
       const cadreWidth = Math.round(width / 400);
       const cadreColor = backgroundColor;
-      const cadre = [
+      let cadre = [
         PolygonFromRect(0, 0, width, cadreWidth).toShape({
           color: cadreColor,
           opacity: 1,
@@ -1115,6 +1432,60 @@ async function draw({
           opacity: 1,
         }),
       ];
+
+      const debugSize = width / palette.length;
+      const debugHeight = debugSize / 2;
+      const gradientSize = debugSize / 100;
+      const debugPalette = palette
+        .map((color, index) => {
+          return PolygonFromRect(
+            index * debugSize,
+            0,
+            debugSize,
+            debugHeight
+          ).toShape({
+            color: color,
+            opacity: 1,
+          });
+        })
+        .concat(
+          palette
+            .map((color, index) => {
+              return palette
+                .filter((item) => item !== color)
+                .map((secondColor, secondColorIndex) => {
+                  return new Array(100).fill(null).map((_, gradientIndex) => {
+                    return PolygonFromRect(
+                      (secondColorIndex + 1) * debugSize +
+                        gradientIndex * gradientSize,
+                      debugHeight * (index + 1),
+                      gradientSize,
+                      debugHeight
+                    ).toShape({
+                      color: colorMixer(
+                        color,
+                        secondColor,
+                        1 - gradientIndex / 100
+                      ),
+                      opacity: 1,
+                    });
+                  });
+                })
+                .concat([
+                  PolygonFromRect(
+                    0,
+                    debugHeight * (index + 1),
+                    debugSize,
+                    debugHeight
+                  ).toShape({
+                    color,
+                    opacity: 1,
+                  }),
+                ]);
+            })
+            .flat()
+            .flat()
+        );
 
       const progressBarColor = colorMixerAmplified(
         backgroundColor,
@@ -1169,9 +1540,78 @@ async function draw({
         color: backgroundColor,
       });
 
+      let texture = [];
+      const textureLength = width / 200;
+
+      const moveTextureLines = (point) => {
+        return translateVector(
+          mapRange(
+            random.noise2D(point.x / 100, point.y / 100),
+            -1,
+            1,
+            0,
+            textureLength / 2
+          ),
+          mapRange(
+            random.noise2D(point.x / 100, point.y / 100),
+            -1,
+            1,
+            0,
+            Math.PI * 2
+          ),
+          point
+        );
+      };
+
+      const offset = Point(0, random.gaussian(0, textureLength / 2));
+      for (let x = 0; x < width / textureLength; x++) {
+        for (let y = 0; y < height / textureLength; y++) {
+          const startTextureLine = Point(x * textureLength, y * textureLength);
+          const endTextureLine = Point(
+            x * textureLength + textureLength,
+            y * textureLength
+          );
+          texture.push(
+            Line(
+              moveTextureLines(startTextureLine),
+              translate(offset.x, offset.y, moveTextureLines(endTextureLine)),
+              {
+                color: Color(
+                  0,
+                  0,
+                  mapRange(
+                    random.noise2D(
+                      startTextureLine.x / 100,
+                      startTextureLine.y
+                    ),
+                    -1,
+                    1,
+                    0.2,
+                    0.8
+                  ) *
+                    (y / (height / textureLength))
+                ),
+                opacity: 0.06,
+                width: mapRange(
+                  random.noise2D(startTextureLine.x / 100, startTextureLine.y),
+                  -1,
+                  1,
+                  0.3,
+                  2.5
+                ),
+              }
+            )
+          );
+        }
+      }
+
       yield {
         background: backgroundColor,
-        elements: [].concat(background).concat(progressBar(0)),
+        elements: []
+          .concat(background)
+          //   .concat(texture)
+          //   .concat(Overlay(texture))
+          .concat(progressBar(0)),
         //   .concat(
         //     allCenters
         //       .map((center, index) => [
@@ -1250,10 +1690,13 @@ async function draw({
           cutElementDistance > 0 &&
           (cutElementDistance > width / 30 || elementDistance <= width / 30)
         ) {
-          grid.push({
-            element: transformElement(cutElementWithFade),
-            position: distanceFromCenter,
-          });
+          const transformedElement = transformElement(cutElementWithFade);
+          if (transformedElement) {
+            grid.push({
+              element: transformedElement,
+              position: distanceFromCenter,
+            });
+          }
         }
       }
 
@@ -1266,8 +1709,14 @@ async function draw({
       }
 
       if (placement === placeElementGrid) {
-        const newLocal = mapRange(Math.pow(random.value(), 7), 0, 1, 0.3, 0.8);
-        grid = grid.slice(0, grid.length * newLocal);
+        const thresholdOfElements = mapRange(
+          Math.pow(random.value(), 7),
+          0,
+          1,
+          0.3,
+          0.8
+        );
+        grid = grid.slice(0, grid.length * thresholdOfElements);
       }
 
       function isVisible(shape: CanvasJpArc, wiggle: number) {
@@ -1304,44 +1753,73 @@ async function draw({
         let numberOfFadeRendered = 0;
         let elementsToRender = [];
 
+        let startFrame = performance.now();
+        let lastFrame = Number.MAX_SAFE_INTEGER;
+
         for (let { element } of grid) {
-          elementsToRender = elementsToRender.concat(element);
-          numberOfRenderedElements += element.length;
+          for (let shape of element) {
+            elementsToRender.push(shape);
+            numberOfRenderedElements++;
 
-          const numberOfElementsPerFrame =
-            (totalNumberOfShapesToDraw / getTimeToDraw()) * 16.6;
-          if (elementsToRender.length > numberOfElementsPerFrame) {
-            let shouldFade =
-              numberOfRenderedElements < grid.length / 4 &&
-              numberOfRenderedElements >
-                numberOfElementsToRenderBeforeFade * (numberOfFadeRendered + 1);
+            let numberOfElementsPerFrame =
+              (totalNumberOfShapesToDraw / getTimeToDraw()) * 16.6;
+            if (elementsToRender.length > numberOfElementsPerFrame) {
+              let shouldFade =
+                numberOfRenderedElements < grid.length / 4 &&
+                numberOfRenderedElements >
+                  numberOfElementsToRenderBeforeFade *
+                    (numberOfFadeRendered + 1);
 
-            let fade = shouldFade
-              ? [
-                  Shape(background.points, {
-                    color: backgroundColor,
-                    opacity: 0.085,
-                  }),
-                ]
-              : [];
-            if (shouldFade) {
-              numberOfFadeRendered++;
+              let fade = shouldFade
+                ? [
+                    Shape(background.points, {
+                      color: backgroundColor,
+                      opacity: 0.085,
+                    }),
+                  ]
+                : [];
+              if (shouldFade) {
+                numberOfFadeRendered++;
+              }
+
+              yield {
+                background: null,
+                elements: []
+                  .concat(fade)
+                  .concat(elementsToRender)
+                  .concat(
+                    progressBar(
+                      1 - numberOfRenderedElements / totalNumberOfShapesToDraw
+                    )
+                  ),
+              };
+
+              let endFrame = performance.now();
+              lastFrame = endFrame - startFrame;
+              startFrame = endFrame;
+
+              if (timeAuto) {
+                if (lastFrame > 30) {
+                  numberOfElementsPerFrame /= 2;
+                  timeToDraw =
+                    (totalNumberOfShapesToDraw / numberOfElementsPerFrame) *
+                    16.6;
+                } else if (lastFrame < 20 && timeToDraw > defaultTimeToDraw) {
+                  numberOfElementsPerFrame *= 1.2;
+                  timeToDraw =
+                    (totalNumberOfShapesToDraw / numberOfElementsPerFrame) *
+                    16.6;
+                }
+              }
+              elementsToRender = [];
             }
-
-            yield {
-              background: null,
-              elements: []
-                .concat(fade)
-                .concat(elementsToRender)
-                .concat(
-                  progressBar(
-                    1 - numberOfRenderedElements / totalNumberOfShapesToDraw
-                  )
-                ),
-            };
-            elementsToRender = [];
           }
         }
+
+        yield {
+          background: null,
+          elements: elementsToRender.concat(cadre),
+        };
 
         yield {
           background: null,
@@ -1360,7 +1838,7 @@ async function draw({
     {
       width: width,
       height: height,
-      resolution: clamp(1, 1.5, window.devicePixelRatio || 1),
+      resolution: resolution,
       title: "Wave",
       animation: false,
       numberOfFrames: frames,
@@ -1370,22 +1848,7 @@ async function draw({
       interactive: false,
     }
   );
-
-  function granulate() {
-    const canvas = document.querySelector("canvas");
-    const context = document.querySelector("canvas").getContext("2d");
-    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-    for (let i = 0; i < imageData.data.length; i += 4) {
-      let grainAmount = (Math.random() - 0.5) * 15;
-      imageData.data[i] = imageData.data[i] + grainAmount;
-      imageData.data[i + 1] = imageData.data[i + 1] + grainAmount;
-      imageData.data[i + 2] = imageData.data[i + 2] + grainAmount;
-      imageData.data[i + 3] = imageData.data[i + 3] + grainAmount;
-    }
-
-    context.putImageData(imageData, 0, 0, 0, 0, canvas.width, canvas.height);
-  }
-  granulate();
+  //   granulate();
   console.log(performance.now() - start);
 }
 
@@ -1400,12 +1863,14 @@ window.addEventListener("click", async () => {
 window.addEventListener("keydown", async (event) => {
   if (event.key === "+") {
     timeToDraw = Math.max(2000, timeToDraw - 5000);
+    timeAuto = false;
   } else if (["-", "6"].includes(event.key)) {
     timeToDraw = timeToDraw + 5000;
+    timeAuto = false;
   } else if (event.key === "g") {
     const directoryHandle = await window.showDirectoryPicker();
 
-    for (let i = 0; i < 1000; i++) {
+    for (let i = 0; i < 512; i++) {
       const index = i + 1;
       const fileName = `${index.toString().padStart(4, "0")}.png`;
 

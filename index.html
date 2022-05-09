@@ -7,13 +7,16 @@
     <title>Julien Pradet - Flood</title>
     <style>
       body {
+        --spacing: 40px;
         margin: 0;
+        box-sizing: border-box;
+        padding: var(--spacing);
         display: flex;
         flex-direction: column;
         justify-content: center;
         align-items: center;
         height: 100vh;
-        background: #f2f2f2;
+        background: #fff;
       }
 
       #container {
@@ -23,9 +26,10 @@
         text-align: center;
         color: #2c3e50;
         display: block;
-        max-width: 100vw;
-        max-height: 100vh;
+        max-width: calc(100vw - var(--spacing) * 2);
+        max-height: calc(100vh - var(--spacing) * 2);
         height: auto !important;
+        width: auto !important;
       }
 
       canvas {
