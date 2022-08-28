@@ -9,20 +9,12 @@ import { inOutSine, inSine, outSine } from "canvas-jp/ease";
 import { Line } from "canvas-jp/Line";
 import { CanvasJpPoint, Point } from "canvas-jp/Point";
 import { PolygonFromRect } from "canvas-jp/Polygon";
-import { Shape, SmoothShape } from "canvas-jp/Shape";
+import { SmoothShape } from "canvas-jp/Shape";
 import { translate } from "canvas-jp/transform";
 import { rotate, translateVector } from "canvas-jp/transform";
 import { mapRange, clamp } from "canvas-sketch-util/math";
 
-let width = 1200;
-let height = (width / 21) * 29.7;
-const windowRatio = window.innerWidth / window.innerHeight;
-const imageRatio = width / height;
-const resolutionFactor =
-  windowRatio > imageRatio
-    ? window.innerHeight / height
-    : window.innerWidth / width;
-const resolution = clamp(1, 2, window.devicePixelRatio || 1) * resolutionFactor;
+const params = new URLSearchParams(window.location.search);
 
 const firstPaletteColors = {
   darkBlue: Color(214 / 360, 0.56, 0.5),
@@ -43,20 +35,43 @@ function getTimeToDraw() {
   return timeToDraw;
 }
 
+let drawTimeout;
 async function draw({
   forceSeed,
   save = null,
   animate = true,
 }: { forceSeed?: number; animate?: boolean; save?: string | null } = {}) {
+  if (drawTimeout) {
+    clearTimeout(drawTimeout);
+  }
+
+  await new Promise<void>((resolve) => {
+    drawTimeout = setTimeout(() => {
+      drawTimeout = null;
+      resolve();
+    }, 100);
+  });
+
   timeToDraw = defaultTimeToDraw;
   document.querySelector("#container").innerHTML = "";
+
+  let width = 1200;
+  let height = (width / 21) * 29.7;
+  const windowRatio = window.innerWidth / window.innerHeight;
+
+  const imageRatio = width / height;
+  const resolutionFactor =
+    windowRatio > imageRatio
+      ? window.innerHeight / height
+      : window.innerWidth / width;
+
+  const selectedWidth = Number(params.get("width"));
+  const resolution = selectedWidth ? selectedWidth / width : resolutionFactor;
 
   await canvasJp(
     document.querySelector("#container"),
     function* (random) {
-      if (forceSeed) {
-        random.setSeed(forceSeed);
-      }
+      random.setSeed(fxhash);
       const margin = width / 10;
       const waveMargin = width / 16;
 
@@ -66,7 +81,7 @@ async function draw({
 
       // Elements variables
       let numberOfElements = Math.ceil(
-        mapRange(Math.pow(random.value(), 1.8), 0, 1, 450, 800)
+        mapRange(Math.pow(random.value(), 2.5), 0, 1, 500, 800)
       );
       if (mode === "Tiny") {
         numberOfElements *= 3;
@@ -75,11 +90,11 @@ async function draw({
         mode === "Tiny"
           ? mapRange(random.value(), 0, 1, width / 150, width / 200)
           : mapRange(
-              Math.pow(random.value(), 1.5),
+              Math.pow(random.value(), 1.25),
               0,
               1,
-              width / 65,
-              width / 35
+              width / 85,
+              width / 55
             );
 
       let length = clamp(
@@ -121,10 +136,14 @@ async function draw({
           ? mapRange(Math.pow(random.value(), 0.3), 0, 1, 2, 10)
           : mode === "Tiny"
           ? mapRange(Math.pow(random.value(), 1.5), 0, 1, 0.4, 4)
-          : mapRange(Math.pow(random.value(), 1.5), 0, 1, 0.4, 2)
+          : mapRange(Math.pow(random.value(), 1.5), 0, 1, 0.4, 2.8)
       );
+
       if (circleDeformationStrength === deformationClamp) {
         circleDeformationStrength = mapRange(random.value(), 0, 1, 0, 0.1);
+      }
+      if (circleDeformationStrength > 1.5) {
+        numberOfElements *= 0.8;
       }
 
       const shouldUseFlatDirection = [
@@ -569,7 +588,7 @@ async function draw({
       if (
         ((centerRandom < 0.15 && centerRandom > 0.11) ||
           (centerRandom > 0.15 && random.value() > 0.1)) &&
-        placement === placeElementCircle
+        placement !== placeElementWave
       ) {
         maxDistance *= 3;
 
@@ -578,7 +597,7 @@ async function draw({
             angle(Point(width / 2, height / 2), center) +
             ((random.value() - 0.5) * Math.PI) / 2;
           const newCenter = translateVector(
-            (mapRange(random.value(), 0, 1, 0.5, 0.7) * maxDistance) / 5,
+            (mapRange(random.value(), 0, 1, 0.5, 0.7) * maxDistance) / 10,
             translationAngle,
             center
           );
@@ -1315,89 +1334,12 @@ async function draw({
             })
           );
 
-          //   claws = claws.concat(
-          //     new Array(numberOfClaws)
-          //       .fill(null)
-          //       .map((_, clawIndex) => {
-          //         const clawProgress =
-          //           clawIndex / (numberOfClaws - 1) + clawOffset[clawIndex];
-
-          //         const distanceProgress = mapRange(clawProgress, 0, 1, -1, 1);
-
-          //         const d =
-          //           currentElement.radius *
-          //           Math.pow(
-          //             distanceProgress *
-          //               random.noise1D(
-          //                 Math.cos(i / 2 + clawOffset[clawIndex] * 20) + i / 10
-          //               ),
-          //             2.3
-          //           );
-
-          //         const d2 =
-          //           currentElement.radius *
-          //           Math.pow(
-          //             distanceProgress *
-          //               random.noise1D(
-          //                 Math.cos((i + 0.5) / 2 + clawOffset[clawIndex] * 20) +
-          //                   i / 10
-          //               ),
-          //             2.3
-          //           );
-
-          //         return [
-          //           Circle(
-          //             translateVector(d, tangent, currentElement.center),
-          //             currentElement.radius / 5,
-          //             {
-          //               ...currentElement.fill,
-          //               opacity:
-          //                 random.gaussian(0.3, 0.2) *
-          //                 (1 - d / currentElement.radius),
-          //             }
-          //           ),
-          //           Circle(
-          //             translateVector(
-          //               distanceBetweenElements * 0.5,
-          //               tangent - Math.PI / 2,
-          //               translateVector(d2, tangent, currentElement.center)
-          //             ),
-          //             currentElement.radius / 5,
-          //             {
-          //               ...currentElement.fill,
-          //               opacity:
-          //                 random.gaussian(0.3, 0.2) *
-          //                 (1 - d2 / currentElement.radius),
-          //             }
-          //           ),
-          //         ];
-          //       })
-          //       .flat()
-          //   );
-
           previousElement = currentElement;
         }
 
         return streetTag;
       }
       transformClouds.fxname = "Cloud";
-
-      console.log("===========");
-      console.log({
-        Seed: random.getSeed(),
-      });
-
-      //   if (
-      //     placement === placeElementCircle &&
-      //     directionFunction === directionConcentric
-      //   ) {
-      //     if (circleDeformationStrength < 0.8) {
-      //       circleDeformationStrength *= 1.3;
-      //     }
-      //     if (flowFieldZoom > 1000) {
-      //       flowFieldZoom *= 0.7;
-      //     }
-      //   }
 
       const cadreWidth = Math.round(width / 400);
       const cadreColor = backgroundColor;
@@ -1419,62 +1361,6 @@ async function draw({
           opacity: 1,
         }),
       ];
-
-      /*
-      const debugSize = width / palette.length;
-      const debugHeight = debugSize / 2;
-      const gradientSize = debugSize / 100;
-      const debugPalette = palette
-        .map((color, index) => {
-          return PolygonFromRect(
-            index * debugSize,
-            0,
-            debugSize,
-            debugHeight
-          ).toShape({
-            color: color,
-            opacity: 1,
-          });
-        })
-        .concat(
-          palette
-            .map((color, index) => {
-              return palette
-                .filter((item) => item !== color)
-                .map((secondColor, secondColorIndex) => {
-                  return new Array(100).fill(null).map((_, gradientIndex) => {
-                    return PolygonFromRect(
-                      (secondColorIndex + 1) * debugSize +
-                        gradientIndex * gradientSize,
-                      debugHeight * (index + 1),
-                      gradientSize,
-                      debugHeight
-                    ).toShape({
-                      color: colorMixer(
-                        color,
-                        secondColor,
-                        1 - gradientIndex / 100
-                      ),
-                      opacity: 1,
-                    });
-                  });
-                })
-                .concat([
-                  PolygonFromRect(
-                    0,
-                    debugHeight * (index + 1),
-                    debugSize,
-                    debugHeight
-                  ).toShape({
-                    color,
-                    opacity: 1,
-                  }),
-                ]);
-            })
-            .flat()
-            .flat()
-        );
-        */
 
       const progressBarColor = colorMixerAmplified(
         backgroundColor,
@@ -1604,24 +1490,20 @@ async function draw({
       };
       console.log(window.$fxhashFeatures);
 
+      let themeColor = document.querySelector("meta[name=theme-color]");
+      if (!themeColor) {
+        themeColor = document.createElement("meta");
+        themeColor.setAttribute("name", "theme-color");
+        document.head.append(themeColor);
+      }
+      themeColor.setAttribute(
+        "content",
+        colorPicker.getBackgroundColor().hex()
+      );
+
       yield {
         background: backgroundColor,
-        elements: []
-          .concat(background)
-          //   .concat(texture)
-          //   .concat(Overlay(texture))
-          .concat(progressBar(0)),
-        //   .concat(
-        //     allCenters
-        //       .map((center, index) => [
-        //         Circle(center, allDistances[index], { color: red, opacity: 1 }),
-        //         Circle(center, 5, {
-        //           color: black,
-        //           opacity: 1,
-        //         }),
-        //       ])
-        //       .flat()
-        //   ),
+        elements: [].concat(background).concat(progressBar(0)),
       };
 
       let grid = [];
@@ -1728,20 +1610,6 @@ async function draw({
         );
       }
 
-      //   let elementsToRender = [];
-      //   for (let { element } of grid) {
-      //     elementsToRender.push(element);
-
-      //     if (elementsToRender.length > 2) {
-      //       const elementsToDraw = [].concat(elementsToRender);
-      //       elementsToRender = [];
-      //       yield {
-      //         background: null,
-      //         elements: elementsToDraw.flat(),
-      //       };
-      //     }
-      //   }
-
       if (animate) {
         const totalNumberOfShapesToDraw = grid
           .map(({ element }) => element.length)
@@ -1779,10 +1647,10 @@ async function draw({
               start = end;
 
               if (timeAuto && !save) {
-                if (lastFrame > 60) {
+                if (lastFrame > 40) {
                   numberOfElementsPerFrame /= 1.2;
                   timeToDraw = timeToDraw * 1.2;
-                } else if (lastFrame < 30 && timeToDraw > defaultTimeToDraw) {
+                } else if (lastFrame < 20 && timeToDraw > defaultTimeToDraw) {
                   timeToDraw = timeToDraw / 1.2;
                 }
               }
@@ -1816,46 +1684,94 @@ async function draw({
   fxpreview();
 }
 
-draw({
-  // @ts-ignore
-  forceSeed: fxhash,
+draw();
+
+let touchStart: number | null = null;
+let initialPosition, hasMoved;
+let touchTimeout = null;
+document.body.addEventListener(
+  "touchstart",
+  (event) => {
+    if (touchStart && performance.now() - touchStart < 200) {
+      // double tap
+      clearTimeout(touchTimeout);
+      touchStart = null;
+      hasMoved = false;
+      toggleFullScreen();
+    } else {
+      initialPosition = {
+        x: event.touches[0].clientX,
+        y: event.touches[0].clientY,
+      };
+      touchStart = performance.now();
+    }
+  },
+  { passive: false }
+);
+document.body.addEventListener("touchmove", (event) => {
+  hasMoved =
+    initialPosition &&
+    (Math.abs(initialPosition.x - event.touches[0].clientX) > 20 ||
+      Math.abs(initialPosition.y - event.touches[0].clientY) > 20);
+});
+document.body.addEventListener("touchend", (event) => {
+  event.stopPropagation();
+  event.preventDefault();
+  if (touchStart && performance.now() - touchStart > 500) {
+    if (!hasMoved) {
+      // long tap
+      download();
+    }
+    clearTimeout(touchTimeout);
+    touchStart = null;
+  } else {
+    touchTimeout = setTimeout(() => {
+      touchStart = null;
+      draw();
+    }, 500);
+  }
 });
 
-window.addEventListener("click", () => {
+document.body.addEventListener("mouseup", (event) => {
+  event.stopPropagation();
+  event.preventDefault();
   draw();
 });
 
-let directoryHandle: FileSystemDirectoryHandle | null = null;
-async function saveImage(name) {
-  if (!directoryHandle) {
-    directoryHandle = await window.showDirectoryPicker();
-  }
-  const canvas = document.querySelector("canvas");
-  const fileHandle = await directoryHandle.getFileHandle(name, {
-    create: true,
-  });
-  const writable = await fileHandle.createWritable();
-  const blob = await new Promise((resolve) => {
-    canvas.toBlob(resolve, "image/png");
-  });
-  await writable.write(blob);
-  await writable.close();
-}
+var download = function () {
+  var link = document.createElement("a");
+  link.download = "Feathers-JulienPradet.png";
+  link.href = document.querySelector("canvas").toDataURL();
+  link.click();
+};
 
 window.addEventListener("keydown", async (event) => {
-  if (["<", "?"].includes(event.key)) {
-    alert(
-      `Hey! Julien Pradet speaking. Nice to meet you! You can find me at https://twitter.com/JulienPradet".
-"?" to display this alert.`
-    );
-  } else if (event.key === " ") {
+  if (event.key === " ") {
     await draw();
   } else if (event.key === "s") {
-    await saveImage("test.png");
-  } else if (event.key === "g") {
-    for (let i = 0; i < 300; i++) {
-      await draw({ animate: false });
-      await saveImage(`${i}.png`);
-    }
+    download();
+  } else if (event.key === "Enter") {
+    toggleFullScreen();
   }
 });
+
+let resizeTimeout = null;
+window.addEventListener("resize", () => {
+  if (resizeTimeout) {
+    clearTimeout(resizeTimeout);
+  }
+  resizeTimeout = setTimeout(() => {
+    draw();
+    resizeTimeout = null;
+  }, 300);
+});
+
+async function toggleFullScreen() {
+  if (!document.fullscreenElement) {
+    await document.documentElement.requestFullscreen();
+  } else {
+    if (document.exitFullscreen) {
+      await document.exitFullscreen();
+    }
+  }
+}

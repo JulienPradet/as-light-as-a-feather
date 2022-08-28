@@ -1,11 +1,12 @@
+/** @type {import('vite').UserConfig} */
+
 export default {
   base: "./",
   build: {
     assetsDir: ".",
-    rollupOptions: {
-      output: {
-        manualChunks: undefined,
-      },
-    },
+  },
+  server: {
+    port: 80,
+    strictPort: true,
   },
 };
