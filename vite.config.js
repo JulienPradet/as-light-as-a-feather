@@ -6,7 +6,8 @@ export default {
     assetsDir: ".",
   },
   server: {
-    port: 80,
+    port: 3000,
+    host: "0.0.0.0",
     strictPort: true,
   },
 };
