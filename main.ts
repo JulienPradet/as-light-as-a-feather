@@ -2680,14 +2680,9 @@ canvasJp(
   () => {
     const params = new URLSearchParams(window.location.search);
 
-    const windowRatio = window.innerWidth / window.innerHeight;
-    let width = Number(params.get("width")) || window.innerWidth;
-
-    var isFxpreview = params.get("preview") === "1";
-    if (isFxpreview) {
-      width = Number(params.get("width")) || 1200;
-    }
+    let width = 1200;
     let height = (width / 21) * 29.7;
+    const windowRatio = window.innerWidth / window.innerHeight;
 
     const imageRatio = width / height;
     const resolutionFactor =
@@ -2695,14 +2690,8 @@ canvasJp(
         ? window.innerHeight / height
         : window.innerWidth / width;
 
-    let resolution = params.get("width") || isFxpreview ? 1 : resolutionFactor;
-
-    if (
-      Math.max(width, height) * resolution < 1200 &&
-      window.devicePixelRatio < 2
-    ) {
-      resolution *= 2;
-    }
+    const selectedWidth = Number(params.get("width"));
+    const resolution = selectedWidth ? selectedWidth / width : resolutionFactor;
 
     return {
       width: width,
